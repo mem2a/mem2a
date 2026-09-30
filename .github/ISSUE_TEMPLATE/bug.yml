@@ -1,0 +1,21 @@
+name: Bug in the reference implementation
+description: Something in python/ or examples/ doesn't do what the spec says.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      render: shell
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      placeholder: "mem2a 0.1.0.dev0, a2a-sdk 1.2.1, Python 3.12"

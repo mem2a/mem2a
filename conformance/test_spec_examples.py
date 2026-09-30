@@ -42,7 +42,7 @@ MEDIA_TYPES = {
 }
 AGENT_PAYLOADS = {"intent", "answer", "commit"}
 
-# Spec section 8.5: which phases may accompany which task states.
+# Spec section 7.2: which phases may accompany which task states.
 PHASES_BY_STATE = {
     "TASK_STATE_INPUT_REQUIRED": {"question", "awaiting-commit"},
     "TASK_STATE_COMPLETED": {"committed"},
@@ -166,6 +166,16 @@ def test_reserved_artifacts(path: Path) -> None:
             assert len(kinds) == 1, item["artifactId"]
             assert item["artifactId"] == kinds[0] and item["name"] == kinds[0]
             assert URI in item.get("extensions", [])
+
+
+@pytest.mark.parametrize("path", EXAMPLES, ids=lambda p: p.name)
+def test_dossier_watches_everything_it_contains(path: Path) -> None:
+    # Spec 8.1.5: `watching` lists every fact, precedent and constraint id.
+    for media_type, data in mem2a_parts(json.loads(path.read_text())):
+        if MEDIA_TYPES.get(media_type) == "dossier":
+            contained = {item["id"] for key in ("facts", "precedent", "constraints") for item in data[key]}
+            missing = contained - set(data["watching"])
+            assert not missing, f"dossier {data['version']} doesn't watch {sorted(missing)}"
 
 
 def test_same_dossier_version_same_content() -> None:

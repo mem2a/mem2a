@@ -50,9 +50,7 @@ MEDIA_TYPE_OF: Final[dict[PayloadKind, str]] = {
 }
 
 #: Payloads an acting agent sends (exactly one per message).
-AGENT_PAYLOADS: Final[frozenset[PayloadKind]] = frozenset(
-    {'intent', 'answer', 'commit'}
-)
+AGENT_PAYLOADS: Final[frozenset[PayloadKind]] = frozenset({'intent', 'answer', 'commit'})
 
 # ------------------------------------------------------- reserved artifact ids
 DOSSIER_ARTIFACT: Final = 'dossier'

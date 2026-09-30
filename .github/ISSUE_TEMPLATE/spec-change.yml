@@ -1,0 +1,39 @@
+name: Spec change
+description: Propose a change to the Mem2A specification. Open this before a pull request.
+labels: ["spec-change"]
+body:
+  - type: input
+    id: section
+    attributes:
+      label: Spec section
+      placeholder: "e.g. 8.4 Commit"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What goes wrong with the current text?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: The proposal
+      description: The change, in RFC 2119 language if you can.
+    validations:
+      required: true
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Is it a breaking change?
+      options:
+        - "No"
+        - "Yes"
+        - "Not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

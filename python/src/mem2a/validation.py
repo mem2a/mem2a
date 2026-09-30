@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 """JSON Schema validation against the Mem2A v0.1 schemas shipped in this package.
 
-The JSON Schemas are the contract. Incoming payloads are validated here
-before they are parsed into models, and outgoing payloads can be validated
-before they are sent (see `check_outgoing`).
+The schemas in ``mem2a/schemas`` are byte-identical copies of the normative
+schemas in the specification. Incoming payloads are validated before they are
+parsed into models; outgoing payloads are validated before they are sent (see
+`check_outgoing`).
 """
 
 from __future__ import annotations
 
 import json
 import logging
-
+import sys
 from functools import cache
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any, Literal
@@ -20,7 +21,10 @@ from referencing import Registry, Resource
 
 
 if TYPE_CHECKING:
-    from importlib.resources.abc import Traversable
+    if sys.version_info >= (3, 11):
+        from importlib.resources.abc import Traversable
+    else:
+        from importlib.abc import Traversable
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +42,9 @@ SCHEMA_NAMES = (
     'update',
 )
 
-#: What to do when an outgoing payload does not match its schema.
-#: ``raise`` for tests and development, ``log`` or ``off`` if you must.
+#: What to do when a payload memory is about to send breaks its schema:
+#: ``raise`` (tests, development), ``log`` (send it anyway, log an error),
+#: or ``off``.
 ValidationMode = Literal['raise', 'log', 'off']
 
 
@@ -62,12 +67,8 @@ def _load() -> tuple[Registry, dict[str, dict[str, Any]]]:
     registry: Registry = Registry()
     schemas: dict[str, dict[str, Any]] = {}
     for name in SCHEMA_NAMES:
-        schema = json.loads(
-            (schema_dir() / f'{name}.schema.json').read_text(encoding='utf-8')
-        )
-        registry = registry.with_resource(
-            schema['$id'], Resource.from_contents(schema)
-        )
+        schema = json.loads((schema_dir() / f'{name}.schema.json').read_text(encoding='utf-8'))
+        registry = registry.with_resource(schema['$id'], Resource.from_contents(schema))
         schemas[name] = schema
     return registry, schemas
 
@@ -79,17 +80,14 @@ def schema(kind: str) -> dict[str, Any]:
 
 @cache
 def validator(kind: str) -> Draft202012Validator:
+    """A cached draft 2020-12 validator (with format checks) for `kind`."""
     registry, schemas = _load()
-    return Draft202012Validator(
-        schemas[kind], registry=registry, format_checker=FormatChecker()
-    )
+    return Draft202012Validator(schemas[kind], registry=registry, format_checker=FormatChecker())
 
 
 def errors(kind: str, payload: Any) -> list[str]:
-    """Readable schema violations, empty if the payload is valid."""
-    found = sorted(
-        validator(kind).iter_errors(payload), key=lambda e: e.json_path
-    )
+    """Readable schema violations; empty if the payload is valid."""
+    found = sorted(validator(kind).iter_errors(payload), key=lambda e: e.json_path)
     return [f'{e.message} (at {e.json_path})' for e in found]
 
 
@@ -98,10 +96,6 @@ def validate(kind: str, payload: Any) -> None:
     problems = errors(kind, payload)
     if problems:
         raise SchemaValidationError(kind, problems)
-
-
-def is_valid(kind: str, payload: Any) -> bool:
-    return not errors(kind, payload)
 
 
 def check_outgoing(kind: str, payload: Any, mode: ValidationMode) -> None:

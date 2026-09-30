@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import re
-
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
@@ -95,9 +94,7 @@ class DevTokenAuthenticator:
         agent, _, rest = rest.partition(':')
         kind, _, rest = rest.partition(':')
         principal_id, _, group_list = rest.partition(':')
-        if prefix != 'dev' or not all(
-            _NAME.match(part) for part in (agent, kind, principal_id)
-        ):
+        if prefix != 'dev' or not all(_NAME.match(part) for part in (agent, kind, principal_id)):
             raise AuthenticationError(
                 'Invalid dev token; expected dev:<agent>:<kind>:<id>[:<groups>].'
             )

@@ -136,7 +136,7 @@
                           "until": "Legal clears Acme pricing."
                         }
                       ],
-                      "watching": ["f-311", "f-208", "c-17"],
+                      "watching": ["f-311", "f-208", "p-4", "c-17"],
                       "expiresAt": "2026-10-05T09:10:02Z"
                     }
                   }

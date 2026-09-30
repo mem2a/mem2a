@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Mem2A v0.1 reference implementation for Python (on a2a-sdk 1.2.x).
+"""Mem2A v0.1 reference implementation for Python, on a2a-sdk 1.2.x.
 
 * `mem2a.engine`: the memory (facts, permissions, precedent, constraints,
   watches, claims), independent of any transport.
 * `mem2a.server`: serves an engine as an A2A JSON-RPC agent.
 * `mem2a.client`: a small client for acting agents.
-* `mem2a.models` / `mem2a.validation`: the payloads and their JSON Schemas.
+* `mem2a.models` and `mem2a.validation`: the payloads and their JSON Schemas.
 """
 
 from mem2a.auth import AuthenticationError, Authenticator, DevTokenAuthenticator, Identity
-from mem2a.card import build_agent_card
+from mem2a.card import build_agent_card, mem2a_params
 from mem2a.client import (
     Mem2AClient,
     PushTarget,
@@ -48,6 +48,7 @@ __all__ = [
     'create_app',
     'dossier_of',
     'error_of',
+    'mem2a_params',
     'parse_push',
     'phase_of',
     'question_of',

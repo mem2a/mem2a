@@ -1,22 +1,25 @@
 # SPDX-License-Identifier: Apache-2.0
 """Typed models of the Mem2A v0.1 payloads (pydantic v2, camelCase on the wire).
 
-The JSON Schemas in ``mem2a/schemas`` are the contract; these models are a
-convenience for building and reading payloads. Use `parse` to validate
-against the schema and get a model back, and `Payload.dump` to get the
-JSON-ready dict that goes on the wire.
+The JSON Schemas in ``mem2a/schemas`` are the contract. These models are a
+convenience for building and reading payloads:
+
+* ``Intent.parse(data)`` validates `data` against the intent schema, then
+  returns the model. Every top-level payload has ``parse``.
+* ``payload.dump()`` returns the JSON-ready dict that goes on the wire.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, TypeVar
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
+from typing_extensions import Self
 
 from mem2a import validation
-from mem2a.constants import ErrorCode, PayloadKind
+from mem2a.constants import ErrorCode
 
 
 SourceKind = Literal[
@@ -32,16 +35,30 @@ SourceKind = Literal[
     'other',
 ]
 EvidenceKind = Literal['email', 'message', 'document', 'record', 'url', 'other']
-ChangeKind = Literal['fact', 'precedent', 'constraint']
+ItemKind = Literal['fact', 'precedent', 'constraint']
 ChangeType = Literal['added', 'updated', 'removed']
+Level = Literal['must', 'should']
 
 
 class Payload(BaseModel):
     """Base class: camelCase aliases, unknown fields rejected (as in the schemas)."""
 
-    model_config = ConfigDict(
-        alias_generator=to_camel, populate_by_name=True, extra='forbid'
-    )
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra='forbid')
+
+    #: Schema file stem for top-level payloads (``'intent'``, ...); None for parts.
+    schema_name: ClassVar[str | None] = None
+
+    @classmethod
+    def parse(cls, data: Any) -> Self:
+        """Validate `data` against the payload's JSON Schema and return the model.
+
+        Raises:
+            mem2a.validation.SchemaValidationError: `data` breaks the schema.
+        """
+        if cls.schema_name is None:
+            raise TypeError(f'{cls.__name__} is not a top-level Mem2A payload')
+        validation.validate(cls.schema_name, data)
+        return cls.model_validate(data)
 
     def dump(self) -> dict[str, Any]:
         """The JSON-ready dict, as sent on the wire."""
@@ -100,7 +117,7 @@ class Precedent(Payload):
 class Constraint(Payload):
     id: str
     statement: str
-    level: Literal['must', 'should']
+    level: Level
     basis: list[str]
     until: str | None = None
     metadata: dict[str, Any] | None = None
@@ -119,8 +136,22 @@ class Conflict(Payload):
     explanation: str
 
 
+class Change(Payload):
+    id: str
+    kind: ItemKind
+    change: ChangeType
+
+
+class RecordedFact(Payload):
+    fact_id: str
+    version: str
+    status: Literal['claim'] = 'claim'
+
+
 # ------------------------------------------------------- agent -> memory
 class Intent(Payload):
+    schema_name = 'intent'
+
     action: str
     summary: str
     entities: list[str]
@@ -131,12 +162,16 @@ class Intent(Payload):
 
 
 class Answer(Payload):
+    schema_name = 'answer'
+
     question_id: str
     text: str
     metadata: dict[str, Any] | None = None
 
 
 class Commit(Payload):
+    schema_name = 'commit'
+
     based_on: str
     action: str
     outcome: Literal['done', 'partial', 'failed']
@@ -148,6 +183,8 @@ class Commit(Payload):
 
 # ------------------------------------------------------- memory -> agent
 class Dossier(Payload):
+    schema_name = 'dossier'
+
     version: str
     summary: str
     facts: list[Fact]
@@ -159,19 +196,17 @@ class Dossier(Payload):
 
 
 class Question(Payload):
+    schema_name = 'question'
+
     id: str
     text: str
     options: list[str] | None = None
     metadata: dict[str, Any] | None = None
 
 
-class Change(Payload):
-    id: str
-    kind: ChangeKind
-    change: ChangeType
-
-
 class Update(Payload):
+    schema_name = 'update'
+
     dossier_version: str
     previous_version: str
     summary: str
@@ -179,13 +214,9 @@ class Update(Payload):
     metadata: dict[str, Any] | None = None
 
 
-class RecordedFact(Payload):
-    fact_id: str
-    version: str
-    status: Literal['claim'] = 'claim'
-
-
 class Receipt(Payload):
+    schema_name = 'receipt'
+
     commit_id: str
     based_on: str
     recorded: list[RecordedFact]
@@ -195,6 +226,8 @@ class Receipt(Payload):
 
 
 class Error(Payload):
+    schema_name = 'error'
+
     code: ErrorCode
     message: str
     current_version: str | None = None
@@ -204,37 +237,9 @@ class Error(Payload):
 class ExtensionParams(Payload):
     """The ``params`` of the Mem2A entry in a memory's Agent Card."""
 
+    schema_name = 'extension-params'
+
     spec_version: Literal['0.1'] = '0.1'
     listen: list[Literal['push', 'subscribe']]
     watch_timeout_seconds: int | None = None
     entity_types: list[str] | None = None
-
-
-MODELS: dict[str, type[Payload]] = {
-    'intent': Intent,
-    'answer': Answer,
-    'commit': Commit,
-    'dossier': Dossier,
-    'question': Question,
-    'update': Update,
-    'receipt': Receipt,
-    'error': Error,
-    'extension-params': ExtensionParams,
-}
-
-P = TypeVar('P', bound=Payload)
-
-
-def parse(kind: PayloadKind | Literal['extension-params'], data: Any) -> Payload:
-    """Validate `data` against its schema, then return the typed model.
-
-    Raises `mem2a.validation.SchemaValidationError` if the data is invalid.
-    """
-    validation.validate(kind, data)
-    return MODELS[kind].model_validate(data)
-
-
-def parse_as(model: type[P], kind: PayloadKind, data: Any) -> P:
-    """Like `parse`, typed for the caller: ``parse_as(Commit, 'commit', data)``."""
-    validation.validate(kind, data)
-    return model.model_validate(data)

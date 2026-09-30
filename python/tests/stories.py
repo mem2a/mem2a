@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""The spec's stories as seed data (Acme quote, Titan update)."""
+"""The spec's stories as seed data: the Acme quote and the Titan update."""
 
 from __future__ import annotations
 
@@ -17,6 +17,12 @@ def dt(text: str) -> datetime:
 TOM = DevTokenAuthenticator.token('sales-assistant', 'user:tom', ['group:sales'])
 PRIYA = DevTokenAuthenticator.token('account-manager', 'user:priya', ['group:sales'])
 MAYA = DevTokenAuthenticator.token('chief-of-staff-agent', 'user:maya', ['group:leadership'])
+# Tom's agent, but with Priya's credentials (example 08).
+PRIYA_AS_SALES_ASSISTANT = DevTokenAuthenticator.token(
+    'sales-assistant', 'user:priya', ['group:sales']
+)
+
+LEGAL_MEETING = 'meeting:legal-weekly-2026-09-25'
 
 TOM_INTENT: dict[str, Any] = {
     'action': 'send_quote',
@@ -40,8 +46,8 @@ MAYA_INTENT: dict[str, Any] = {
 }
 
 
-def tom_commit(based_on: str) -> dict[str, Any]:
-    return {
+def tom_commit(based_on: str, conflicts: list[dict[str, str]] | None = None) -> dict[str, Any]:
+    commit: dict[str, Any] = {
         'basedOn': based_on,
         'action': 'send_quote',
         'outcome': 'done',
@@ -60,11 +66,15 @@ def tom_commit(based_on: str) -> dict[str, Any]:
             }
         ],
     }
+    if conflicts is not None:
+        commit['conflicts'] = conflicts
+    return commit
 
 
 def seed_acme(engine: MemoryEngine) -> None:
+    """Examples 02-05: legal paused Acme pricing; hold the quote."""
     engine.add_source(
-        'meeting:legal-weekly-2026-09-25',
+        LEGAL_MEETING,
         kind='meeting',
         title='Legal weekly',
         at=dt('2026-09-25T17:00:00Z'),
@@ -73,7 +83,7 @@ def seed_acme(engine: MemoryEngine) -> None:
     engine.add_fact(
         'f-311',
         'Legal paused new pricing for Acme on Friday, pending a contract review.',
-        source='meeting:legal-weekly-2026-09-25',
+        source=LEGAL_MEETING,
         confirmed_by='user:general-counsel',
         entities=['account:acme'],
     )
@@ -120,18 +130,20 @@ def seed_acme(engine: MemoryEngine) -> None:
 
 
 def legal_clears(engine: MemoryEngine) -> None:
-    engine.supersede_fact(
-        'f-311',
+    """Example 03: f-340 supersedes f-311, so c-17 and p-4 lapse."""
+    engine.add_fact(
         'f-340',
         'Legal approved Acme renewal pricing at $1.2M a year.',
         source='email:legal-acme-approval-2026-09-28',
         confirmed_by='user:general-counsel',
         entities=['account:acme'],
+        supersedes=['f-311'],
         note='Legal cleared Acme pricing.',
     )
 
 
 def seed_titan(engine: MemoryEngine) -> None:
+    """Examples 06-07: is the new date funded? If not, cite Orion."""
     engine.add_source('jira:TITAN-812', kind='ticket')
     engine.add_fact(
         'f-501',
@@ -183,3 +195,10 @@ def seed_titan(engine: MemoryEngine) -> None:
         tags={'no': ['unfunded-slip'], 'partly': ['unfunded-slip']},
         prompt='Before I pull this together: is the new date funded?',
     )
+
+
+def seeded_engine(**kwargs: Any) -> MemoryEngine:
+    engine = MemoryEngine(**kwargs)
+    seed_acme(engine)
+    seed_titan(engine)
+    return engine
