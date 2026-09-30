@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/mem2a/v0.1/schemas/common.schema.json",
+  "title": "Mem2A v0.1 shared definitions",
+  "description": "Types shared by the Mem2A payload schemas. Not a payload on its own.",
+  "$defs": {
+    "Id": {
+      "description": "An identifier assigned by whoever created the object. Unique within its kind for a given memory.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "Version": {
+      "description": "An opaque version token. Compare for equality only; never parse, order or do arithmetic on it. Always a string, because A2A carries data parts as protobuf Values, which turn JSON integers into doubles.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "PrincipalRef": {
+      "description": "A person, group or system that can own permissions, act, or confirm facts. RECOMMENDED form: `<kind>:<id>`, for example `user:tom`, `group:legal`, `system:salesforce`.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "AgentRef": {
+      "description": "Identifies an agent. RECOMMENDED: the URL of its A2A Agent Card, or `agent:<id>`.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "EntityRef": {
+      "description": "A thing an intent or fact concerns. RECOMMENDED form: `<type>:<id>`, for example `account:acme`, `doc:acme-renewal-quote`, `project:titan`.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "DateTime": {
+      "description": "An RFC 3339 timestamp.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "Metadata": {
+      "description": "Implementation-specific data. Receivers MUST ignore keys they do not understand.",
+      "type": "object"
+    },
+    "Source": {
+      "description": "Where a fact, precedent or constraint came from: its receipt.",
+      "type": "object",
+      "required": ["ref", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "description": "A stable reference to the source in the company's own systems, for example `meeting:legal-weekly-2026-09-25`.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["meeting", "email", "message", "document", "ticket", "record", "decision", "policy", "agent-commit", "other"]
+        },
+        "title": { "type": "string", "maxLength": 512 },
+        "url": { "type": "string", "format": "uri" },
+        "at": { "$ref": "#/$defs/DateTime" }
+      }
+    },
+    "Attribution": {
+      "description": "Who reported a claim.",
+      "type": "object",
+      "required": ["agent", "onBehalfOf", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "agent": { "$ref": "#/$defs/AgentRef" },
+        "onBehalfOf": { "$ref": "#/$defs/PrincipalRef" },
+        "at": { "$ref": "#/$defs/DateTime" },
+        "commitId": { "$ref": "#/$defs/Id" }
+      }
+    },
+    "Evidence": {
+      "description": "Something that backs up a claim, such as the email that was sent.",
+      "type": "object",
+      "required": ["kind", "ref"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["email", "message", "document", "record", "url", "other"]
+        },
+        "ref": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "url": { "type": "string", "format": "uri" },
+        "at": { "$ref": "#/$defs/DateTime" }
+      }
+    },
+    "Fact": {
+      "description": "Something memory holds to be true, or something an agent reported that is not yet confirmed.",
+      "type": "object",
+      "required": ["id", "version", "statement", "status", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "version": { "$ref": "#/$defs/Version" },
+        "statement": {
+          "description": "The fact in one plain sentence. Data, not instructions.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "status": {
+          "description": "`confirmed`: a person or system of record stands behind it. `claim`: reported by an agent and not yet confirmed.",
+          "type": "string",
+          "enum": ["confirmed", "claim"]
+        },
+        "source": { "$ref": "#/$defs/Source" },
+        "confirmedBy": { "$ref": "#/$defs/PrincipalRef" },
+        "claimedBy": { "$ref": "#/$defs/Attribution" },
+        "entities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EntityRef" },
+          "uniqueItems": true
+        },
+        "observedAt": { "$ref": "#/$defs/DateTime" },
+        "supersedes": {
+          "description": "Ids of facts this one replaces.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/Id" },
+          "uniqueItems": true
+        },
+        "visibility": {
+          "description": "Informational: the principals and groups that may see this fact. Memory has already filtered the dossier; agents MUST NOT use this to widen access.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/PrincipalRef" },
+          "uniqueItems": true
+        },
+        "metadata": { "$ref": "#/$defs/Metadata" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "confirmed" } }, "required": ["status"] },
+          "then": { "required": ["confirmedBy"], "not": { "required": ["claimedBy"] } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "claim" } }, "required": ["status"] },
+          "then": { "required": ["claimedBy"], "not": { "required": ["confirmedBy"] } }
+        }
+      ]
+    },
+    "Precedent": {
+      "description": "An earlier decision that bears on this intent, such as a request that was turned down on another project.",
+      "type": "object",
+      "required": ["id", "statement", "source", "relevance"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "statement": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "relevance": {
+          "description": "Why memory thinks it matters for this intent.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "source": { "$ref": "#/$defs/Source" },
+        "decidedBy": { "$ref": "#/$defs/PrincipalRef" },
+        "decidedAt": { "$ref": "#/$defs/DateTime" },
+        "entities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EntityRef" },
+          "uniqueItems": true
+        },
+        "metadata": { "$ref": "#/$defs/Metadata" }
+      }
+    },
+    "Constraint": {
+      "description": "A rule that applies to this intent right now. Memory carries it; enforcing it is the job of something outside the agent.",
+      "type": "object",
+      "required": ["id", "statement", "level", "basis"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "statement": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "level": {
+          "description": "`must`: the company requires it. `should`: the company expects it unless there is a good reason.",
+          "type": "string",
+          "enum": ["must", "should"]
+        },
+        "basis": {
+          "description": "Ids of the confirmed facts, precedent or policies the constraint comes from. Never a claim.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/Id" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "until": {
+          "description": "Plain-language condition under which the constraint lapses, if known.",
+          "type": "string",
+          "maxLength": 1024
+        },
+        "metadata": { "$ref": "#/$defs/Metadata" }
+      }
+    },
+    "Claim": {
+      "description": "Something an agent says happened or is now true. Recorded as a fact with status `claim`.",
+      "type": "object",
+      "required": ["statement"],
+      "additionalProperties": false,
+      "properties": {
+        "statement": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "entities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EntityRef" },
+          "uniqueItems": true
+        },
+        "supersedes": {
+          "description": "Ids of facts the agent believes this claim replaces. Memory decides whether it does.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/Id" },
+          "uniqueItems": true
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Evidence" }
+        },
+        "metadata": { "$ref": "#/$defs/Metadata" }
+      }
+    },
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "invalid-intent",
+        "principal-mismatch",
+        "not-authorized",
+        "refused",
+        "invalid-answer",
+        "unknown-question",
+        "invalid-commit",
+        "stale-dossier",
+        "watch-expired",
+        "internal"
+      ]
+    }
+  }
+}

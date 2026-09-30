@@ -1,0 +1,186 @@
+{
+  "title": "Commit: the agent sent the quote and reports back",
+  "description": "The agent commits against version 13. Memory records the claim (not yet confirmed), completes the task with a receipt, and re-checks every other open task that touches account:acme, so Priya's agent hears about the quote before she opens her inbox.",
+  "http": {
+    "request": {
+      "method": "POST",
+      "url": "https://memory.example.com/a2a/jsonrpc",
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Version": "1.0",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1",
+        "Authorization": "Bearer <delegated token: agent=sales-assistant, sub=user:tom>"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "method": "SendMessage",
+        "params": {
+          "message": {
+            "messageId": "msg-tom-003",
+            "taskId": "task-acme-quote",
+            "contextId": "ctx-tom-acme",
+            "role": "ROLE_USER",
+            "parts": [
+              {
+                "mediaType": "application/vnd.mem2a.commit+json",
+                "data": {
+                  "basedOn": "13",
+                  "action": "send_quote",
+                  "outcome": "done",
+                  "summary": "Sent Acme the renewal quote at $1.2M a year.",
+                  "claims": [
+                    {
+                      "statement": "Tom sent Acme a renewal quote at $1.2M a year.",
+                      "entities": [
+                        "account:acme",
+                        "doc:acme-renewal-quote"
+                      ],
+                      "evidence": [
+                        {
+                          "kind": "email",
+                          "ref": "email:<CAF1e2d3-acme-quote@mail.example.com>",
+                          "at": "2026-09-28T15:18:40Z"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "extensions": [
+              "https://w3id.org/mem2a/v0.1"
+            ]
+          }
+        }
+      }
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "result": {
+          "task": {
+            "id": "task-acme-quote",
+            "contextId": "ctx-tom-acme",
+            "status": {
+              "state": "TASK_STATE_COMPLETED",
+              "message": {
+                "messageId": "msg-mem-004",
+                "taskId": "task-acme-quote",
+                "contextId": "ctx-tom-acme",
+                "role": "ROLE_AGENT",
+                "parts": [
+                  {
+                    "text": "Recorded as a claim until the CRM or a person confirms it. Agents watching Acme have been told."
+                  }
+                ],
+                "metadata": {
+                  "https://w3id.org/mem2a/v0.1/phase": "committed"
+                },
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              },
+              "timestamp": "2026-09-28T15:20:30Z"
+            },
+            "artifacts": [
+              {
+                "artifactId": "dossier",
+                "name": "dossier",
+                "parts": [
+                  {
+                    "mediaType": "application/vnd.mem2a.dossier+json",
+                    "data": {
+                      "version": "13",
+                      "summary": "Legal cleared Acme pricing at $1.2M a year. You can send the quote.",
+                      "facts": [
+                        {
+                          "id": "f-340",
+                          "version": "1",
+                          "statement": "Legal approved Acme renewal pricing at $1.2M a year.",
+                          "status": "confirmed",
+                          "confirmedBy": "user:general-counsel",
+                          "source": {
+                            "kind": "email",
+                            "ref": "email:legal-acme-approval-2026-09-28",
+                            "title": "Acme pricing: approved",
+                            "at": "2026-09-28T15:02:00Z"
+                          },
+                          "entities": [
+                            "account:acme"
+                          ],
+                          "supersedes": [
+                            "f-311"
+                          ],
+                          "visibility": [
+                            "group:sales",
+                            "group:legal"
+                          ]
+                        },
+                        {
+                          "id": "f-208",
+                          "version": "1",
+                          "statement": "Acme's current contract renews on October 31, 2026.",
+                          "status": "confirmed",
+                          "confirmedBy": "system:crm",
+                          "source": {
+                            "kind": "record",
+                            "ref": "crm:opportunity/acme-renewal-2026"
+                          },
+                          "entities": [
+                            "account:acme"
+                          ]
+                        }
+                      ],
+                      "precedent": [],
+                      "constraints": [],
+                      "watching": [
+                        "f-340",
+                        "f-208"
+                      ],
+                      "expiresAt": "2026-10-05T09:10:02Z"
+                    }
+                  }
+                ],
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              },
+              {
+                "artifactId": "receipt",
+                "name": "receipt",
+                "parts": [
+                  {
+                    "mediaType": "application/vnd.mem2a.receipt+json",
+                    "data": {
+                      "commitId": "cm-9f2",
+                      "basedOn": "13",
+                      "recorded": [
+                        {
+                          "factId": "f-352",
+                          "version": "1",
+                          "status": "claim"
+                        }
+                      ],
+                      "conflictsRecorded": 0,
+                      "at": "2026-09-28T15:20:30Z"
+                    }
+                  }
+                ],
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "title": "Listen: legal clears the pricing and memory calls back",
+  "description": "On Monday afternoon legal approves Acme's pricing. Fact f-311 is superseded by f-340 and constraint c-17 lapses. Memory replaces the task's dossier artifact with version 13, then sends a status update that says what changed. Both arrive at the webhook the agent registered, as A2A push notifications (StreamResponse bodies). An open SubscribeToTask stream would carry the same two events.",
+  "push": [
+    {
+      "method": "POST",
+      "url": "https://sales-assistant.example.com/a2a/callbacks",
+      "headers": {
+        "Content-Type": "application/a2a+json",
+        "Authorization": "Bearer <single-use secret for this task>"
+      },
+      "body": {
+        "artifactUpdate": {
+          "taskId": "task-acme-quote",
+          "contextId": "ctx-tom-acme",
+          "artifact": {
+            "artifactId": "dossier",
+            "name": "dossier",
+            "parts": [
+              {
+                "mediaType": "application/vnd.mem2a.dossier+json",
+                "data": {
+                  "version": "13",
+                  "summary": "Legal cleared Acme pricing at $1.2M a year. You can send the quote.",
+                  "facts": [
+                    {
+                      "id": "f-340",
+                      "version": "1",
+                      "statement": "Legal approved Acme renewal pricing at $1.2M a year.",
+                      "status": "confirmed",
+                      "confirmedBy": "user:general-counsel",
+                      "source": {
+                        "kind": "email",
+                        "ref": "email:legal-acme-approval-2026-09-28",
+                        "title": "Acme pricing: approved",
+                        "at": "2026-09-28T15:02:00Z"
+                      },
+                      "entities": ["account:acme"],
+                      "supersedes": ["f-311"],
+                      "visibility": ["group:sales", "group:legal"]
+                    },
+                    {
+                      "id": "f-208",
+                      "version": "1",
+                      "statement": "Acme's current contract renews on October 31, 2026.",
+                      "status": "confirmed",
+                      "confirmedBy": "system:crm",
+                      "source": {
+                        "kind": "record",
+                        "ref": "crm:opportunity/acme-renewal-2026"
+                      },
+                      "entities": ["account:acme"]
+                    }
+                  ],
+                  "precedent": [],
+                  "constraints": [],
+                  "watching": ["f-340", "f-208"],
+                  "expiresAt": "2026-10-05T09:10:02Z"
+                }
+              }
+            ],
+            "extensions": ["https://w3id.org/mem2a/v0.1"]
+          },
+          "append": false,
+          "lastChunk": true
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://sales-assistant.example.com/a2a/callbacks",
+      "headers": {
+        "Content-Type": "application/a2a+json",
+        "Authorization": "Bearer <single-use secret for this task>"
+      },
+      "body": {
+        "statusUpdate": {
+          "taskId": "task-acme-quote",
+          "contextId": "ctx-tom-acme",
+          "status": {
+            "state": "TASK_STATE_INPUT_REQUIRED",
+            "message": {
+              "messageId": "msg-mem-002",
+              "taskId": "task-acme-quote",
+              "contextId": "ctx-tom-acme",
+              "role": "ROLE_AGENT",
+              "parts": [
+                { "text": "Acme pricing is approved again: $1.2M a year. Dossier is now version 13." },
+                {
+                  "mediaType": "application/vnd.mem2a.update+json",
+                  "data": {
+                    "dossierVersion": "13",
+                    "previousVersion": "12",
+                    "summary": "Legal cleared Acme pricing.",
+                    "changes": [
+                      { "id": "f-340", "kind": "fact", "change": "added" },
+                      { "id": "f-311", "kind": "fact", "change": "removed" },
+                      { "id": "c-17", "kind": "constraint", "change": "removed" },
+                      { "id": "p-4", "kind": "precedent", "change": "removed" }
+                    ]
+                  }
+                }
+              ],
+              "metadata": {
+                "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit"
+              },
+              "extensions": ["https://w3id.org/mem2a/v0.1"]
+            },
+            "timestamp": "2026-09-28T15:02:05Z"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/mem2a/v0.1/schemas/question.schema.json",
+  "title": "Mem2A question",
+  "description": "A question memory asks back before it can prepare a dossier. Sent by memory as a data part (mediaType `application/vnd.mem2a.question+json`) in a status message with phase `question`.",
+  "type": "object",
+  "required": ["id", "text"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/Id" },
+    "text": {
+      "description": "The question in plain language, for example `Is the new date funded?`",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "options": {
+      "description": "Optional: suggested answers. The agent may answer with any text.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 },
+      "uniqueItems": true
+    },
+    "metadata": { "$ref": "common.schema.json#/$defs/Metadata" }
+  }
+}

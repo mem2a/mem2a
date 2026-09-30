@@ -1,0 +1,162 @@
+{
+  "title": "Commit refused: based on a stale dossier",
+  "description": "Suppose the agent had missed the callback and reported against version 12. Memory records nothing, keeps the task open, and says which version is current. The agent reads dossier version 13 and commits again, listing any conflicts between what it already did and the current dossier.",
+  "http": {
+    "request": {
+      "method": "POST",
+      "url": "https://memory.example.com/a2a/jsonrpc",
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Version": "1.0",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1",
+        "Authorization": "Bearer <delegated token: agent=sales-assistant, sub=user:tom>"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "method": "SendMessage",
+        "params": {
+          "message": {
+            "messageId": "msg-tom-002",
+            "taskId": "task-acme-quote",
+            "contextId": "ctx-tom-acme",
+            "role": "ROLE_USER",
+            "parts": [
+              {
+                "mediaType": "application/vnd.mem2a.commit+json",
+                "data": {
+                  "basedOn": "12",
+                  "action": "send_quote",
+                  "outcome": "done",
+                  "summary": "Sent Acme the renewal quote at $1.2M a year.",
+                  "claims": [
+                    {
+                      "statement": "Tom sent Acme a renewal quote at $1.2M a year.",
+                      "entities": [
+                        "account:acme",
+                        "doc:acme-renewal-quote"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "extensions": [
+              "https://w3id.org/mem2a/v0.1"
+            ]
+          }
+        }
+      }
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "result": {
+          "task": {
+            "id": "task-acme-quote",
+            "contextId": "ctx-tom-acme",
+            "status": {
+              "state": "TASK_STATE_INPUT_REQUIRED",
+              "message": {
+                "messageId": "msg-mem-003",
+                "taskId": "task-acme-quote",
+                "contextId": "ctx-tom-acme",
+                "role": "ROLE_AGENT",
+                "parts": [
+                  {
+                    "text": "Not recorded: your commit is based on dossier 12, but the current version is 13."
+                  },
+                  {
+                    "mediaType": "application/vnd.mem2a.error+json",
+                    "data": {
+                      "code": "stale-dossier",
+                      "message": "Commit is based on dossier 12; the current version is 13. Read the current dossier and commit again.",
+                      "currentVersion": "13"
+                    }
+                  }
+                ],
+                "metadata": {
+                  "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit"
+                },
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              },
+              "timestamp": "2026-09-28T15:20:11Z"
+            },
+            "artifacts": [
+              {
+                "artifactId": "dossier",
+                "name": "dossier",
+                "parts": [
+                  {
+                    "mediaType": "application/vnd.mem2a.dossier+json",
+                    "data": {
+                      "version": "13",
+                      "summary": "Legal cleared Acme pricing at $1.2M a year. You can send the quote.",
+                      "facts": [
+                        {
+                          "id": "f-340",
+                          "version": "1",
+                          "statement": "Legal approved Acme renewal pricing at $1.2M a year.",
+                          "status": "confirmed",
+                          "confirmedBy": "user:general-counsel",
+                          "source": {
+                            "kind": "email",
+                            "ref": "email:legal-acme-approval-2026-09-28",
+                            "title": "Acme pricing: approved",
+                            "at": "2026-09-28T15:02:00Z"
+                          },
+                          "entities": [
+                            "account:acme"
+                          ],
+                          "supersedes": [
+                            "f-311"
+                          ],
+                          "visibility": [
+                            "group:sales",
+                            "group:legal"
+                          ]
+                        },
+                        {
+                          "id": "f-208",
+                          "version": "1",
+                          "statement": "Acme's current contract renews on October 31, 2026.",
+                          "status": "confirmed",
+                          "confirmedBy": "system:crm",
+                          "source": {
+                            "kind": "record",
+                            "ref": "crm:opportunity/acme-renewal-2026"
+                          },
+                          "entities": [
+                            "account:acme"
+                          ]
+                        }
+                      ],
+                      "precedent": [],
+                      "constraints": [],
+                      "watching": [
+                        "f-340",
+                        "f-208"
+                      ],
+                      "expiresAt": "2026-10-05T09:10:02Z"
+                    }
+                  }
+                ],
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
