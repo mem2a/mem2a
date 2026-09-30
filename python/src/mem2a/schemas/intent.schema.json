@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/mem2a/v0.1/schemas/intent.schema.json",
+  "title": "Mem2A intent",
+  "description": "What an agent is about to do, the things it touches, and who it is acting for. Sent by the agent as a data part with mediaType `application/vnd.mem2a.intent+json` in the first message of a task.",
+  "type": "object",
+  "required": ["action", "summary", "entities", "onBehalfOf"],
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "description": "A short, stable identifier for the kind of action, for example `send_quote` or `update_leadership`. Memory may map it to company policy.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "summary": {
+      "description": "The action in one plain sentence, for example `Send Acme a renewal quote`.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "entities": {
+      "description": "The things the action touches.",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/EntityRef" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "onBehalfOf": { "$ref": "common.schema.json#/$defs/PrincipalRef" },
+    "draft": {
+      "description": "Optional: the content the agent plans to send or change, so memory can check it against precedent and constraints. Confidential to this task.",
+      "type": "string",
+      "maxLength": 65536
+    },
+    "deadline": {
+      "description": "Optional: when the agent intends to act by.",
+      "$ref": "common.schema.json#/$defs/DateTime"
+    },
+    "metadata": { "$ref": "common.schema.json#/$defs/Metadata" }
+  }
+}

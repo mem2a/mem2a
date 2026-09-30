@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/mem2a/v0.1/schemas/answer.schema.json",
+  "title": "Mem2A answer",
+  "description": "The agent's answer to a question from memory. Sent by the agent as a data part (mediaType `application/vnd.mem2a.answer+json`) in a follow-up message on the same task.",
+  "type": "object",
+  "required": ["questionId", "text"],
+  "additionalProperties": false,
+  "properties": {
+    "questionId": { "$ref": "common.schema.json#/$defs/Id" },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "metadata": { "$ref": "common.schema.json#/$defs/Metadata" }
+  }
+}
