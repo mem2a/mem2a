@@ -28,13 +28,19 @@ python examples/acme-quote/demo.py
 ```
     tom | About to send Acme a renewal quote. Asking memory first.
  memory | dossier 12, awaiting-commit: "Hold: Do not send Acme new pricing until legal clears it."
+    tom | Holding the quote. Memory will call my webhook if this changes.
   legal | Approves Acme pricing at $1.2M a year (f-340 supersedes f-311).
- memory | push to tom: dossier 13 replaces 12. "Legal cleared Acme pricing."
+ memory | push to tom: dossier 13 replaces 12.
+        |   - constraint c-17
+    tom | No constraints left. Sending the quote.
     tom | Quote sent. Committing against dossier 13.
  memory | receipt cm-1: f-341 recorded as a claim.
- memory | stream to priya: dossier 15 replaces 14. + fact f-341 (claim by user:tom)
+ memory | watch for priya: dossier 15 replaces 14.
+        |   + fact f-341 (claim by user:tom): Tom sent Acme a renewal quote at $1.2M a year.
   priya | Tom already sent the quote, so no follow-up now. Canceling.
 ```
+
+(Trimmed; the demo prints every dossier in full.)
 
 Prefer curl, JavaScript or Go? Start a sandbox memory with `mem2a serve --seed acme --dev-admin` and follow the [wire quickstart](docs/wire-quickstart.md): every request, ready to paste.
 
