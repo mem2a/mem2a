@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mem2a"
+version = "0.1.0.dev0"
+description = "Reference implementation of Mem2A v0.1, an A2A extension that lets agents negotiate with company memory before they act."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+keywords = ["a2a", "agents", "memory", "mem2a"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: OS Independent",
+  "Typing :: Typed",
+]
+dependencies = [
+  # Pinned to 1.2.x on purpose: out-of-band updates (listen) reach an open
+  # task through DefaultRequestHandlerV2._active_task_registry, a private
+  # attribute (see run_internal_turn in mem2a/server.py). Re-check that
+  # function before widening the range.
+  "a2a-sdk[http-server]>=1.2.1,<1.3",
+  "httpx>=0.28",
+  "jsonschema>=4.18",
+  "pydantic>=2.7",
+  "referencing>=0.30",
+  # Without these, jsonschema silently skips `format: date-time` and
+  # `format: uri`.
+  "rfc3339-validator>=0.1.4",
+  "rfc3986-validator>=0.1.1",
+  "starlette>=0.40",
+  "typing-extensions>=4.6",
+  # `mem2a serve` and the conformance runner's webhook.
+  "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.11",
+  "pytest>=8",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.6",
+  # Stubs, so that `mypy --strict python/src` works without this file's config.
+  "types-jsonschema",
+  "types-protobuf",
+]
+
+[project.scripts]
+mem2a = "mem2a.cli:main"
+mem2a-conform = "mem2a.conform:main"
+
+[project.urls]
+Specification = "https://w3id.org/mem2a/v0.1"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mem2a"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # typographic characters in prose
+
+[tool.ruff.lint.isort]
+known-first-party = ["mem2a"]
+known-local-folder = ["conftest", "stories", "wire"]
+lines-after-imports = 2
+
+[tool.ruff.format]
+quote-style = "single"
+exclude = ["*.md"]  # README samples are laid out for reading
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+packages = ["mem2a"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["google.protobuf.*", "jsonschema.*"]
+ignore_missing_imports = true

@@ -1,0 +1,89 @@
+{
+  "title": "Refusal: the intent names someone the caller can't act for",
+  "description": "The token says the agent acts for Priya, but the intent says Tom. Memory refuses: the task ends REJECTED with phase refused and an error part. The message does not reveal anything about Tom's accounts.",
+  "http": {
+    "request": {
+      "method": "POST",
+      "url": "https://memory.example.com/a2a/jsonrpc",
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Version": "1.0",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1",
+        "Authorization": "Bearer <delegated token: agent=sales-assistant, sub=user:priya>"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "20",
+        "method": "SendMessage",
+        "params": {
+          "message": {
+            "messageId": "msg-priya-009",
+            "role": "ROLE_USER",
+            "parts": [
+              {
+                "mediaType": "application/vnd.mem2a.intent+json",
+                "data": {
+                  "action": "send_quote",
+                  "summary": "Send Acme a renewal quote",
+                  "entities": [
+                    "account:acme"
+                  ],
+                  "onBehalfOf": "user:tom"
+                }
+              }
+            ],
+            "extensions": [
+              "https://w3id.org/mem2a/v0.1"
+            ]
+          }
+        }
+      }
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "20",
+        "result": {
+          "task": {
+            "id": "task-refused-1",
+            "contextId": "ctx-priya-1",
+            "status": {
+              "state": "TASK_STATE_REJECTED",
+              "message": {
+                "messageId": "msg-mem-201",
+                "taskId": "task-refused-1",
+                "contextId": "ctx-priya-1",
+                "role": "ROLE_AGENT",
+                "parts": [
+                  {
+                    "text": "Refused: this agent is signed in for user:priya, not user:tom."
+                  },
+                  {
+                    "mediaType": "application/vnd.mem2a.error+json",
+                    "data": {
+                      "code": "principal-mismatch",
+                      "message": "The intent's onBehalfOf does not match the principal in your credentials."
+                    }
+                  }
+                ],
+                "metadata": {
+                  "https://w3id.org/mem2a/v0.1/phase": "refused",
+                  "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-priya-009"
+                },
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              },
+              "timestamp": "2026-09-28T10:00:01Z"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/mem2a/v0.1/schemas/error.schema.json",
+  "title": "Mem2A error",
+  "description": "Why memory refused, or why it could not accept a message. Sent by memory as a data part (mediaType `application/vnd.mem2a.error+json`) in a status message.",
+  "type": "object",
+  "required": ["code", "message"],
+  "additionalProperties": false,
+  "properties": {
+    "code": { "$ref": "common.schema.json#/$defs/ErrorCode" },
+    "message": {
+      "description": "A plain-language explanation. MUST NOT reveal facts the principal cannot see.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "currentVersion": {
+      "description": "For `stale-dossier`: the task's current dossier version.",
+      "$ref": "common.schema.json#/$defs/Version"
+    },
+    "metadata": { "$ref": "common.schema.json#/$defs/Metadata" }
+  },
+  "if": { "properties": { "code": { "const": "stale-dossier" } }, "required": ["code"] },
+  "then": { "required": ["currentVersion"] }
+}

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/mem2a/v0.1/schemas/update.schema.json",
+  "title": "Mem2A update",
+  "description": "Tells the agent that its dossier changed while the task was open. Sent by memory as a data part (mediaType `application/vnd.mem2a.update+json`) in a status message with phase `awaiting-commit`, right after the replaced `dossier` artifact.",
+  "type": "object",
+  "required": [
+    "dossierVersion",
+    "previousVersion",
+    "summary",
+    "changes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "dossierVersion": {
+      "$ref": "common.schema.json#/$defs/Version"
+    },
+    "previousVersion": {
+      "$ref": "common.schema.json#/$defs/Version"
+    },
+    "summary": {
+      "description": "What changed, in one plain sentence, for example `Legal cleared Acme pricing.`",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "change"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "fact",
+              "precedent",
+              "constraint"
+            ]
+          },
+          "change": {
+            "description": "`removed` covers retirement and loss of access alike, so that the update does not reveal which.",
+            "type": "string",
+            "enum": [
+              "added",
+              "updated",
+              "removed"
+            ]
+          }
+        }
+      },
+      "maxItems": 384
+    },
+    "metadata": {
+      "$ref": "common.schema.json#/$defs/Metadata"
+    }
+  }
+}

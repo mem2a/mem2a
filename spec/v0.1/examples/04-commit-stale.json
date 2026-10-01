@@ -1,0 +1,319 @@
+{
+  "title": "A stale commit that records a conflict",
+  "description": "A separate story from the Acme quote. Sam's agent read dossier 20 for a Globex discount: nothing stood in the way, so at 10:02 it approved a 15% discount. At 10:05 finance froze discounts above 10%, and memory produced dossier 21 with a new constraint. Sam's agent then reports against dossier 20. Memory records nothing, says dossier 21 is current, and includes the update the agent may have missed. The agent commits again against dossier 21, listing the constraint its action went against. Memory records the claim and routes the conflict to a person. Because a commit's conflicts may only name items of the dossier it is based on, refusing the stale commit is what gets the freeze in front of a person.",
+  "exchanges": [
+    {
+      "http": {
+        "request": {
+          "method": "POST",
+          "url": "https://memory.example.com/a2a/jsonrpc",
+          "headers": {
+            "Content-Type": "application/json",
+            "A2A-Version": "1.0",
+            "A2A-Extensions": "https://w3id.org/mem2a/v0.1",
+            "Authorization": "Bearer <delegated token: agent=deal-desk-assistant, sub=user:sam>"
+          },
+          "body": {
+            "jsonrpc": "2.0",
+            "id": "40",
+            "method": "SendMessage",
+            "params": {
+              "message": {
+                "messageId": "msg-sam-002",
+                "taskId": "task-globex-discount",
+                "contextId": "ctx-sam-globex",
+                "role": "ROLE_USER",
+                "parts": [
+                  {
+                    "mediaType": "application/vnd.mem2a.commit+json",
+                    "data": {
+                      "basedOn": "20",
+                      "action": "approve_discount",
+                      "outcome": "done",
+                      "summary": "Approved a 15% renewal discount for Globex.",
+                      "claims": [
+                        {
+                          "statement": "Sam approved a 15% renewal discount for Globex.",
+                          "entities": ["account:globex", "deal:globex-renewal-2026"]
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "extensions": ["https://w3id.org/mem2a/v0.1"]
+              }
+            }
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json",
+            "A2A-Extensions": "https://w3id.org/mem2a/v0.1"
+          },
+          "body": {
+            "jsonrpc": "2.0",
+            "id": "40",
+            "result": {
+              "task": {
+                "id": "task-globex-discount",
+                "contextId": "ctx-sam-globex",
+                "status": {
+                  "state": "TASK_STATE_INPUT_REQUIRED",
+                  "message": {
+                    "messageId": "msg-mem-401",
+                    "taskId": "task-globex-discount",
+                    "contextId": "ctx-sam-globex",
+                    "role": "ROLE_AGENT",
+                    "parts": [
+                      { "text": "Not recorded: your commit is based on dossier 20, but the current version is 21. Finance froze discounts above 10% for the rest of the quarter." },
+                      {
+                        "mediaType": "application/vnd.mem2a.update+json",
+                        "data": {
+                          "dossierVersion": "21",
+                          "previousVersion": "20",
+                          "summary": "Finance froze discounts above 10% for the rest of the quarter.",
+                          "changes": [
+                            { "id": "f-410", "kind": "fact", "change": "added" },
+                            { "id": "c-50", "kind": "constraint", "change": "added" }
+                          ]
+                        }
+                      },
+                      {
+                        "mediaType": "application/vnd.mem2a.error+json",
+                        "data": {
+                          "code": "stale-dossier",
+                          "message": "Commit is based on dossier 20; the current version is 21. Read the current dossier and commit again.",
+                          "currentVersion": "21"
+                        }
+                      }
+                    ],
+                    "metadata": {
+                      "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit",
+                      "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-sam-002"
+                    },
+                    "extensions": ["https://w3id.org/mem2a/v0.1"]
+                  },
+                  "timestamp": "2026-09-30T10:06:12Z"
+                },
+                "artifacts": [
+                  {
+                    "artifactId": "dossier",
+                    "name": "dossier",
+                    "parts": [
+                      {
+                        "mediaType": "application/vnd.mem2a.dossier+json",
+                        "data": {
+                          "version": "21",
+                          "summary": "Finance froze discounts above 10% this morning. Get the CFO's sign-off first.",
+                          "facts": [
+                            {
+                              "id": "f-410",
+                              "version": "1",
+                              "statement": "Finance froze discounts above 10% for the rest of the quarter.",
+                              "status": "confirmed",
+                              "confirmedBy": "user:cfo",
+                              "source": {
+                                "kind": "email",
+                                "ref": "email:finance-discount-freeze-2026-09-30",
+                                "title": "Discount freeze, effective now",
+                                "at": "2026-09-30T10:05:00Z"
+                              },
+                              "entities": ["account:globex", "policy:discounts"]
+                            },
+                            {
+                              "id": "f-401",
+                              "version": "1",
+                              "statement": "Globex asked for a 15% discount on its renewal.",
+                              "status": "confirmed",
+                              "confirmedBy": "system:crm",
+                              "source": { "kind": "record", "ref": "crm:opportunity/globex-renewal-2026" },
+                              "entities": ["account:globex", "deal:globex-renewal-2026"]
+                            }
+                          ],
+                          "precedent": [],
+                          "constraints": [
+                            {
+                              "id": "c-50",
+                              "version": "1",
+                              "statement": "Don't approve discounts above 10% this quarter without the CFO's sign-off.",
+                              "level": "must",
+                              "basis": ["f-410"],
+                              "until": "The quarter ends, or the CFO signs off."
+                            }
+                          ],
+                          "watching": ["f-410", "f-401", "c-50"],
+                          "expiresAt": "2026-10-07T09:58:00Z"
+                        }
+                      }
+                    ],
+                    "extensions": ["https://w3id.org/mem2a/v0.1"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "http": {
+        "request": {
+          "method": "POST",
+          "url": "https://memory.example.com/a2a/jsonrpc",
+          "headers": {
+            "Content-Type": "application/json",
+            "A2A-Version": "1.0",
+            "A2A-Extensions": "https://w3id.org/mem2a/v0.1",
+            "Authorization": "Bearer <delegated token: agent=deal-desk-assistant, sub=user:sam>"
+          },
+          "body": {
+            "jsonrpc": "2.0",
+            "id": "41",
+            "method": "SendMessage",
+            "params": {
+              "message": {
+                "messageId": "msg-sam-003",
+                "taskId": "task-globex-discount",
+                "contextId": "ctx-sam-globex",
+                "role": "ROLE_USER",
+                "parts": [
+                  {
+                    "mediaType": "application/vnd.mem2a.commit+json",
+                    "data": {
+                      "basedOn": "21",
+                      "action": "approve_discount",
+                      "outcome": "done",
+                      "summary": "Approved a 15% renewal discount for Globex.",
+                      "claims": [
+                        {
+                          "statement": "Sam approved a 15% renewal discount for Globex.",
+                          "entities": ["account:globex", "deal:globex-renewal-2026"]
+                        }
+                      ],
+                      "conflicts": [
+                        {
+                          "id": "c-50",
+                          "explanation": "The discount was approved at 10:02, three minutes before the freeze."
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "extensions": ["https://w3id.org/mem2a/v0.1"]
+              }
+            }
+          }
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json",
+            "A2A-Extensions": "https://w3id.org/mem2a/v0.1"
+          },
+          "body": {
+            "jsonrpc": "2.0",
+            "id": "41",
+            "result": {
+              "task": {
+                "id": "task-globex-discount",
+                "contextId": "ctx-sam-globex",
+                "status": {
+                  "state": "TASK_STATE_COMPLETED",
+                  "message": {
+                    "messageId": "msg-mem-402",
+                    "taskId": "task-globex-discount",
+                    "contextId": "ctx-sam-globex",
+                    "role": "ROLE_AGENT",
+                    "parts": [
+                      { "text": "Recorded as a claim until a person or a system of record confirms it. The conflict with c-50 has gone to a person for review." }
+                    ],
+                    "metadata": {
+                      "https://w3id.org/mem2a/v0.1/phase": "committed",
+                      "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-sam-003"
+                    },
+                    "extensions": ["https://w3id.org/mem2a/v0.1"]
+                  },
+                  "timestamp": "2026-09-30T10:07:40Z"
+                },
+                "artifacts": [
+                  {
+                    "artifactId": "dossier",
+                    "name": "dossier",
+                    "parts": [
+                      {
+                        "mediaType": "application/vnd.mem2a.dossier+json",
+                        "data": {
+                          "version": "21",
+                          "summary": "Finance froze discounts above 10% this morning. Get the CFO's sign-off first.",
+                          "facts": [
+                            {
+                              "id": "f-410",
+                              "version": "1",
+                              "statement": "Finance froze discounts above 10% for the rest of the quarter.",
+                              "status": "confirmed",
+                              "confirmedBy": "user:cfo",
+                              "source": {
+                                "kind": "email",
+                                "ref": "email:finance-discount-freeze-2026-09-30",
+                                "title": "Discount freeze, effective now",
+                                "at": "2026-09-30T10:05:00Z"
+                              },
+                              "entities": ["account:globex", "policy:discounts"]
+                            },
+                            {
+                              "id": "f-401",
+                              "version": "1",
+                              "statement": "Globex asked for a 15% discount on its renewal.",
+                              "status": "confirmed",
+                              "confirmedBy": "system:crm",
+                              "source": { "kind": "record", "ref": "crm:opportunity/globex-renewal-2026" },
+                              "entities": ["account:globex", "deal:globex-renewal-2026"]
+                            }
+                          ],
+                          "precedent": [],
+                          "constraints": [
+                            {
+                              "id": "c-50",
+                              "version": "1",
+                              "statement": "Don't approve discounts above 10% this quarter without the CFO's sign-off.",
+                              "level": "must",
+                              "basis": ["f-410"],
+                              "until": "The quarter ends, or the CFO signs off."
+                            }
+                          ],
+                          "watching": ["f-410", "f-401", "c-50"],
+                          "expiresAt": "2026-10-07T09:58:00Z"
+                        }
+                      }
+                    ],
+                    "extensions": ["https://w3id.org/mem2a/v0.1"]
+                  },
+                  {
+                    "artifactId": "receipt",
+                    "name": "receipt",
+                    "parts": [
+                      {
+                        "mediaType": "application/vnd.mem2a.receipt+json",
+                        "data": {
+                          "commitId": "cm-a71",
+                          "basedOn": "21",
+                          "recorded": [
+                            { "factId": "f-415", "version": "1", "status": "claim" }
+                          ],
+                          "conflicts": ["c-50"],
+                          "at": "2026-09-30T10:07:40Z"
+                        }
+                      }
+                    ],
+                    "extensions": ["https://w3id.org/mem2a/v0.1"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

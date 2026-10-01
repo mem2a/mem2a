@@ -1,0 +1,115 @@
+{
+  "title": "Discover: the memory's Agent Card",
+  "description": "Served at https://memory.example.com/.well-known/agent-card.json. The Mem2A entry in capabilities.extensions is what marks this agent as a Mem2A memory.",
+  "agentCard": {
+    "name": "Example Corp memory",
+    "description": "Example Corp's shared company memory. Tell it what you are about to do and for whom; it tells you what you need to know first, and calls back if that changes.",
+    "version": "0.1.0",
+    "provider": {
+      "organization": "Example Corp",
+      "url": "https://example.com"
+    },
+    "supportedInterfaces": [
+      {
+        "url": "https://memory.example.com/a2a/jsonrpc",
+        "protocolBinding": "JSONRPC",
+        "protocolVersion": "1.0"
+      }
+    ],
+    "capabilities": {
+      "streaming": true,
+      "pushNotifications": true,
+      "extensions": [
+        {
+          "uri": "https://w3id.org/mem2a/v0.1",
+          "description": "Mem2A: negotiate before acting, listen for changes, commit after acting.",
+          "required": true,
+          "params": {
+            "specVersion": "0.1",
+            "listen": [
+              "push",
+              "subscribe"
+            ],
+            "watchTimeout": "P7D",
+            "entityTypes": [
+              "account",
+              "doc",
+              "project",
+              "person"
+            ]
+          }
+        }
+      ]
+    },
+    "securitySchemes": {
+      "company-sso": {
+        "openIdConnectSecurityScheme": {
+          "description": "Example Corp sign-in. Agents present a delegated token that names both the agent and the person it acts for (OAuth 2.0 Token Exchange, RFC 8693).",
+          "openIdConnectUrl": "https://login.example.com/.well-known/openid-configuration"
+        }
+      }
+    },
+    "securityRequirements": [
+      {
+        "schemes": {
+          "company-sso": {
+            "list": [
+              "memory.negotiate",
+              "memory.commit"
+            ]
+          }
+        }
+      }
+    ],
+    "defaultInputModes": [
+      "application/vnd.mem2a.intent+json",
+      "application/vnd.mem2a.answer+json",
+      "application/vnd.mem2a.commit+json",
+      "text/plain"
+    ],
+    "defaultOutputModes": [
+      "application/vnd.mem2a.dossier+json",
+      "application/vnd.mem2a.question+json",
+      "application/vnd.mem2a.update+json",
+      "application/vnd.mem2a.receipt+json",
+      "application/vnd.mem2a.error+json",
+      "text/plain"
+    ],
+    "skills": [
+      {
+        "id": "negotiate",
+        "name": "Negotiate",
+        "description": "Before acting, send an intent (what, which things, for whom). Get back a dossier, a question, or a refusal.",
+        "tags": [
+          "mem2a",
+          "memory"
+        ],
+        "inputModes": [
+          "application/vnd.mem2a.intent+json",
+          "application/vnd.mem2a.answer+json"
+        ],
+        "outputModes": [
+          "application/vnd.mem2a.dossier+json",
+          "application/vnd.mem2a.question+json",
+          "application/vnd.mem2a.error+json"
+        ]
+      },
+      {
+        "id": "commit",
+        "name": "Commit",
+        "description": "After acting, report what you did, against the latest dossier version you have read.",
+        "tags": [
+          "mem2a",
+          "memory"
+        ],
+        "inputModes": [
+          "application/vnd.mem2a.commit+json"
+        ],
+        "outputModes": [
+          "application/vnd.mem2a.receipt+json",
+          "application/vnd.mem2a.error+json"
+        ]
+      }
+    ]
+  }
+}

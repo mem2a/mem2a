@@ -1,0 +1,36 @@
+name: Interop report
+description: Two Mem2A implementations that don't work together.
+labels: ["interop"]
+body:
+  - type: textarea
+    id: implementations
+    attributes:
+      label: Implementations involved
+      description: Name, version and role (memory or agent) of each.
+      placeholder: |
+        Memory: acme-memory 0.3 (TypeScript)
+        Agent: mem2a Python client 0.1.0.dev0
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: wire
+    attributes:
+      label: The messages involved
+      description: Requests and responses, with tokens removed.
+      render: json
+  - type: textarea
+    id: conform
+    attributes:
+      label: mem2a-conform output, if you ran it
+      render: shell
+  - type: input
+    id: section
+    attributes:
+      label: The spec section you think applies
+      placeholder: "e.g. 8.3 Listen"

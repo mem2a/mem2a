@@ -1,0 +1,185 @@
+# Documentation site for Mem2A, built with Material for MkDocs.
+#
+#   pip install -r requirements-docs.txt
+#   mkdocs serve          # http://127.0.0.1:8000
+#   mkdocs build --strict
+#
+# The pages are the repository's own files. docs/ holds the guides and the
+# home page; .mkdocs/hooks.py adds the spec, its schemas and examples, the
+# decision records and the community files, and rewrites their links.
+
+site_name: Mem2A
+site_url: https://mem2a.github.io/mem2a/
+site_description: >-
+  Mem2A is an open protocol, built on A2A, that lets any AI agent consult a
+  company's shared memory before it acts, hear when that changes, and report
+  back after.
+site_author: The Mem2A authors
+copyright: Mem2A is an open specification under the Apache License 2.0. Started by <a href="https://sentra.app">Sentra</a>.
+
+repo_url: https://github.com/mem2a/mem2a
+repo_name: mem2a/mem2a
+edit_uri: edit/main/
+
+docs_dir: docs
+site_dir: site
+exclude_docs: |
+  README.md
+
+hooks:
+  - .mkdocs/hooks.py
+
+theme:
+  name: material
+  custom_dir: .mkdocs/overrides
+  language: en
+  logo: assets/brand/mem2a-mark-white.svg
+  favicon: assets/brand/mem2a-icon.svg
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil-outline
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.code.copy
+    - content.tabs.link
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.path
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.suggest
+    - toc.follow
+
+extra_css:
+  - stylesheets/mem2a.css
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/mem2a/mem2a
+      name: Mem2A on GitHub
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - mdx_truly_sane_lists
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+
+validation:
+  omitted_files: warn
+  absolute_links: info
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Learn:
+      - Why Mem2A: why.md
+      - How it works: how-it-works.md
+      - A2A primer: a2a-primer.md
+      - Glossary: glossary.md
+      - Who it's for: ecosystem.md
+      - Threat model: threat-model.md
+      - FAQ: faq.md
+  - Specification:
+      - Mem2A 0.1: specification/index.md
+      - Worked examples:
+          - specification/examples/index.md
+          - 01 Agent Card: specification/examples/01-agent-card.md
+          - 02 Negotiate: specification/examples/02-negotiate.md
+          - 03 Listen for an update: specification/examples/03-listen-update.md
+          - 04 A stale commit: specification/examples/04-commit-stale.md
+          - 05 Commit: specification/examples/05-commit.md
+          - 06 A question: specification/examples/06-question.md
+          - 07 An answer: specification/examples/07-answer.md
+          - 08 A refusal: specification/examples/08-refusal.md
+          - 09 A claim on a stream: specification/examples/09-listen-stream-claim.md
+          - 10 Read, callback, cancel: specification/examples/10-read-callback-cancel.md
+      - JSON Schemas:
+          - specification/schemas/index.md
+          - Intent: specification/schemas/intent.md
+          - Answer: specification/schemas/answer.md
+          - Commit: specification/schemas/commit.md
+          - Dossier: specification/schemas/dossier.md
+          - Question: specification/schemas/question.md
+          - Update: specification/schemas/update.md
+          - Receipt: specification/schemas/receipt.md
+          - Error: specification/schemas/error.md
+          - Extension params: specification/schemas/extension-params.md
+          - Shared definitions: specification/schemas/common.md
+      - Decision records:
+          - adrs/index.md
+          - 0001 Build on A2A: adrs/0001-build-on-a2a.md
+          - 0002 One task per action: adrs/0002-one-task-per-action.md
+          - 0003 Enforcement lives elsewhere: adrs/0003-memory-carries-rules-enforcement-elsewhere.md
+          - 0004 Claims are not facts: adrs/0004-claims-are-not-facts.md
+          - 0005 Permissions follow the source: adrs/0005-permissions-follow-the-source.md
+          - 0006 Stale commits: adrs/0006-stale-commits-are-refused-then-reconciled.md
+          - 0007 Opaque versions: adrs/0007-versions-are-opaque-strings.md
+          - 0008 Updates are signals: adrs/0008-updates-are-signals.md
+          - 0009 Tasks belong to their owner: adrs/0009-tasks-belong-to-their-owner.md
+  - Build:
+      - Start here: start-here.md
+      - Wire quickstart: wire-quickstart.md
+      - Python SDK: guides/python.md
+      - The Acme demo: guides/acme-demo.md
+      - A sales agent: guides/sales-agent.md
+      - A tool gateway: guides/tool-gateway.md
+      - Implementer's guide: implementers-guide.md
+      - Inside the reference implementation: guides/python-architecture.md
+  - Community:
+      - community/index.md
+      - Contributing: community/contributing.md
+      - Governance: community/governance.md
+      - Maintainers: community/maintainers.md
+      - Implementations: community/implementations.md
+      - Roadmap: roadmap.md
+      - Changelog: community/changelog.md
+      - Code of conduct: community/code-of-conduct.md
+      - Security: community/security.md

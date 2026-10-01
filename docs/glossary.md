@@ -1,0 +1,62 @@
+# Glossary
+
+Every term you'll meet in Mem2A, in alphabetical order. Terms marked *A2A* come from the A2A protocol; the [A2A primer](a2a-primer.md) explains them in context. The rest are Mem2A's own, defined normatively in the [spec's terminology](../spec/v0.1/mem2a.md#3-terminology).
+
+- **Action**: what an intent says the agent is about to do, as a short name such as `send_quote`. Memory uses it to pick the policies and precedent that apply.
+- **Activation**: asking for an extension on a request, with the `A2A-Extensions` header. Memory refuses Mem2A messages that don't activate it, with `-32008` ([spec 6](../spec/v0.1/mem2a.md#6-activation)).
+- **Agent**: in Mem2A, the A2A client that is about to act and consults memory first. Its messages carry role `ROLE_USER`.
+- **Agent Card** *(A2A)*: the JSON document at `/.well-known/agent-card.json` that says what an A2A server supports. A memory's card declares Mem2A ([spec 5](../spec/v0.1/mem2a.md#5-discovery), [example 01](../spec/v0.1/examples/01-agent-card.json)).
+- **Answer**: the agent's reply to a question from memory, sent on the same task ([spec 8.2](../spec/v0.1/mem2a.md#82-answer)).
+- **Artifact** *(A2A)*: an output of a task. Mem2A uses two: `dossier` and `receipt` ([spec 7.3](../spec/v0.1/mem2a.md#73-artifacts)).
+- **`awaiting-commit`**: the phase in which memory has delivered a dossier and watches it. The agent acts when the dossier allows it, then commits; or it waits for an update, or cancels.
+- **`basedOn`**: in a commit, the version of the latest dossier the agent has read: normally the one it acted on. If it isn't the current version, the commit is stale.
+- **`basis`**: the confirmed facts, precedent or policy a constraint derives from. Never a claim ([spec 9.4](../spec/v0.1/mem2a.md#9-facts-claims-and-receipts)).
+- **Claim**: a fact an agent reported in a commit, not yet confirmed by a person or a system of record. Claims never become constraints or precedent, and never lift anything ([spec 9](../spec/v0.1/mem2a.md#9-facts-claims-and-receipts), [ADR 0004](../adrs/0004-claims-are-not-facts.md)).
+- **Commit**: the agent's report, after acting, of what it did, against the latest dossier version it has read. It carries claims and conflicts ([spec 8.4](../spec/v0.1/mem2a.md#84-commit)).
+- **Confirmed fact**: a fact that a person or a system of record stands behind. It names them in `confirmedBy`.
+- **Conflict**: an item of the `basedOn` dossier that the agent's action went against, listed in its commit. Memory records it and routes it to a person ([example 04](../spec/v0.1/examples/04-commit-stale.json)).
+- **Constraint**: a rule that applies to an intent right now, such as "do not send Acme new pricing until legal clears it". Memory carries it; something outside the agent enforces it ([ADR 0003](../adrs/0003-memory-carries-rules-enforcement-elsewhere.md)).
+- **`contextId`** *(A2A)*: the id of the conversation a task belongs to. Send it with `taskId` on every follow-up.
+- **Delegation**: an agent acting for a principal. Memory must know both, ideally from an OAuth 2.0 token-exchange token ([spec 10.2](../spec/v0.1/mem2a.md#10-identity-and-permissions), [primer](a2a-primer.md#credentials-and-delegation)).
+- **Dossier**: memory's versioned answer to an intent: the facts, precedent and constraints the agent should know before acting, with a summary ([spec 8.1](../spec/v0.1/mem2a.md#81-negotiate)).
+- **Draft**: optional text in an intent, such as the message the agent plans to send. Confidential to its task ([spec 10.6](../spec/v0.1/mem2a.md#10-identity-and-permissions)).
+- **Entity**: a thing an intent or fact is about, named like `account:acme` or `project:titan`. Naming entities across tools is an [open question](https://github.com/mem2a/mem2a/issues/5).
+- **Error part**: a Mem2A error, such as `stale-dossier`, carried as an `application/vnd.mem2a.error+json` part in a status message. Most leave the task open ([spec 7.5](../spec/v0.1/mem2a.md#75-what-memory-does-with-each-message)).
+- **Evidence**: what backs up a claim, such as the id of the email that was sent.
+- **`expiresAt`**: when a dossier's watch, or an open question, ends, if memory declares a `watchTimeout`.
+- **Extension** *(A2A)*: a way to add behavior to A2A, named by a URI. Mem2A's is `https://w3id.org/mem2a/v0.1` ([primer](a2a-primer.md#extensions-and-activation)).
+- **Fact**: a statement memory holds, with an id, a version, a source and a status (`confirmed` or `claim`).
+- **`inReplyTo`**: status metadata naming the agent message that a status answers, so an agent can tell its reply from an update ([spec 7.2](../spec/v0.1/mem2a.md#72-phase)).
+- **Intent**: what the agent is about to do, the entities it touches, and who it acts for. It opens a task ([spec 8.1](../spec/v0.1/mem2a.md#81-negotiate)).
+- **Item**: a fact, precedent or constraint. Item ids are unique across all three within a memory.
+- **`level`**: how firm a constraint is: `must` (the company requires it) or `should` (the company expects it unless there's a good reason). Not the RFC 2119 key words.
+- **Memory**: the company's shared memory, as an A2A server that implements Mem2A.
+- **`messageId`** *(A2A)*: a unique id the sender gives each message. Memory processes each one once, so retries are safe ([spec 8.4.8](../spec/v0.1/mem2a.md#84-commit)).
+- **Open task**: a task that hasn't reached a terminal state.
+- **Phase**: Mem2A's name for where a task stands, carried in status metadata next to the A2A state: `working`, `question`, `awaiting-commit`, `reauth`, `committed`, `refused`, `expired`, `canceled` or `failed` ([spec 7.2](../spec/v0.1/mem2a.md#72-phase)).
+- **Policy**: a rule people configure in memory. Memory applies it to matching intents as a constraint.
+- **Precedent**: an earlier decision that bears on an intent, with a `relevance` saying why. Never derived from what agents report.
+- **Principal**: the person, group or system an agent acts for, such as `user:tom`.
+- **Profile extension** *(A2A)*: an extension that adds structure and rules to existing A2A messages, without new methods or states. Mem2A is one ([ADR 0001](../adrs/0001-build-on-a2a.md)).
+- **Push notification** *(A2A)*: the server POSTing a task's events to a webhook the client registered. In Mem2A, a signal to read the task, not the dossier itself ([ADR 0008](../adrs/0008-updates-are-signals.md)).
+- **Push origin**: a scheme, host and port the company registered for an agent's webhooks. Memory delivers nowhere else ([spec 8.3.10](../spec/v0.1/mem2a.md#83-listen)).
+- **Question**: memory asking the agent something before it answers, such as "Is the new date funded?" ([spec 8.2](../spec/v0.1/mem2a.md#82-answer), [example 06](../spec/v0.1/examples/06-question.json)).
+- **Receipt**: memory's record of an accepted commit: the claims it recorded and the conflicts it noted, in the `receipt` artifact.
+- **`relevance`**: a precedent's explanation of why it bears on this intent.
+- **`replaces`**: a claim's hint that it makes some facts obsolete. Only people act on it; memory never retires anything because of it.
+- **Role** *(A2A)*: who sent a message. `ROLE_USER` is the client (the agent, in Mem2A), and `ROLE_AGENT` is the server (memory).
+- **Source**: where a fact or precedent came from, such as a meeting, an email or a CRM record, so a person can trace it. Permissions follow it ([ADR 0005](../adrs/0005-permissions-follow-the-source.md)).
+- **Stale commit**: a commit whose `basedOn` isn't the current dossier version. Memory records nothing and answers `stale-dossier`; the agent reads the current dossier and commits again ([ADR 0006](../adrs/0006-stale-commits-are-refused-then-reconciled.md)).
+- **Status message** *(A2A)*: the server's latest message on a task, in `status.message`. In Mem2A, every one carries a text part and the phase.
+- **Stream** *(A2A)*: a long-lived HTTP response of server-sent events, from `SubscribeToTask` or `SendStreamingMessage` ([primer](a2a-primer.md#hearing-about-changes)).
+- **Supersede**: a newer confirmed fact replacing an older one, which then leaves dossiers. Only confirmed facts can supersede.
+- **System of record**: a system the company treats as authoritative for some kind of fact, such as a CRM for quotes sent.
+- **Task** *(A2A)*: the unit of work in A2A. In Mem2A, one action, from intent to commit ([ADR 0002](../adrs/0002-one-task-per-action.md)).
+- **Task binding**: a task belongs to the agent and principal that opened it; to anyone else, it doesn't exist ([spec 10.7](../spec/v0.1/mem2a.md#10-identity-and-permissions), [ADR 0009](../adrs/0009-tasks-belong-to-their-owner.md)).
+- **Task state** *(A2A)*: `TASK_STATE_WORKING`, `TASK_STATE_INPUT_REQUIRED`, `TASK_STATE_COMPLETED` and so on. Interrupted states wait for the client; terminal states never change again ([primer](a2a-primer.md#tasks)).
+- **Update**: memory's notice that a dossier has a new version, listing what was added, updated or removed ([spec 8.3](../spec/v0.1/mem2a.md#83-listen)).
+- **Version**: an opaque string that names one content of a dossier or an item. Compare versions for equality only ([spec 7.4](../spec/v0.1/mem2a.md#74-identifiers-and-versions), [ADR 0007](../adrs/0007-versions-are-opaque-strings.md)).
+- **Visibility**: who may see an item. For a fact, memory may list in `visibility` the recipient's own groups that grant access, and nothing more.
+- **Watch**: memory's promise, while a task is in `awaiting-commit`, to send a new dossier version when anything in it changes, or something new becomes relevant ([spec 8.3](../spec/v0.1/mem2a.md#83-listen)).
+- **`watching`**: the ids of every item in a dossier: exactly what memory watches for that task.
+- **`watchTimeout`**: how long memory keeps a task open without a commit, declared in its card, such as `P7D` for seven days.

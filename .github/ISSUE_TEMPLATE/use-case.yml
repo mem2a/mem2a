@@ -1,0 +1,30 @@
+name: Use case
+description: A situation Mem2A should handle, or doesn't handle yet.
+labels: ["use-case"]
+body:
+  - type: textarea
+    id: situation
+    attributes:
+      label: The situation
+      description: Which agents, acting for whom, about to do what? What went wrong, or could?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should memory have said, and when?
+    validations:
+      required: true
+  - type: textarea
+    id: gap
+    attributes:
+      label: What in the current draft gets in the way?
+      description: Link the spec section if you can.
+  - type: dropdown
+    id: production
+    attributes:
+      label: Is this from agents you run in production?
+      options:
+        - "Yes"
+        - "Not yet"
+        - "No"

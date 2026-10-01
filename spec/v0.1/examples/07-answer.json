@@ -1,0 +1,174 @@
+{
+  "title": "Answer: the date isn't funded, so memory brings up the precedent",
+  "description": "The agent answers on the same task. Memory returns dossier version 7 with the precedent the agent could never have searched for (leadership turned down an unfunded slip on another project) and two constraints that follow from it. The task stays open, waiting for a commit.",
+  "http": {
+    "request": {
+      "method": "POST",
+      "url": "https://memory.example.com/a2a/jsonrpc",
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Version": "1.0",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1",
+        "Authorization": "Bearer <delegated token: agent=chief-of-staff-agent, sub=user:maya>"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "11",
+        "method": "SendMessage",
+        "params": {
+          "message": {
+            "messageId": "msg-maya-002",
+            "taskId": "task-titan-update",
+            "contextId": "ctx-maya-titan",
+            "role": "ROLE_USER",
+            "parts": [
+              {
+                "mediaType": "application/vnd.mem2a.answer+json",
+                "data": {
+                  "questionId": "q-1",
+                  "text": "No."
+                }
+              }
+            ],
+            "extensions": [
+              "https://w3id.org/mem2a/v0.1"
+            ]
+          }
+        }
+      }
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "11",
+        "result": {
+          "task": {
+            "id": "task-titan-update",
+            "contextId": "ctx-maya-titan",
+            "status": {
+              "state": "TASK_STATE_INPUT_REQUIRED",
+              "message": {
+                "messageId": "msg-mem-102",
+                "taskId": "task-titan-update",
+                "contextId": "ctx-maya-titan",
+                "role": "ROLE_AGENT",
+                "parts": [
+                  {
+                    "text": "Leadership turned down an unfunded slip on Orion in June. Lead with how you'll cover the cost, three bullets at most."
+                  }
+                ],
+                "metadata": {
+                  "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit",
+                  "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-maya-002"
+                },
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              },
+              "timestamp": "2026-09-29T16:41:10Z"
+            },
+            "artifacts": [
+              {
+                "artifactId": "dossier",
+                "name": "dossier",
+                "parts": [
+                  {
+                    "mediaType": "application/vnd.mem2a.dossier+json",
+                    "data": {
+                      "version": "7",
+                      "summary": "Unfunded slip: leadership rejected the last one. Lead with cost mitigation, three bullets at most.",
+                      "facts": [
+                        {
+                          "id": "f-501",
+                          "version": "2",
+                          "statement": "Titan's launch date moved from October 30 to November 20.",
+                          "status": "confirmed",
+                          "confirmedBy": "user:maya",
+                          "source": {
+                            "kind": "ticket",
+                            "ref": "jira:TITAN-812"
+                          },
+                          "entities": [
+                            "project:titan"
+                          ]
+                        },
+                        {
+                          "id": "f-502",
+                          "version": "1",
+                          "statement": "Priya owns the Titan data migration rewrite.",
+                          "status": "confirmed",
+                          "confirmedBy": "user:maya",
+                          "source": {
+                            "kind": "meeting",
+                            "ref": "meeting:titan-standup-2026-09-29"
+                          },
+                          "entities": [
+                            "project:titan",
+                            "user:priya"
+                          ]
+                        }
+                      ],
+                      "precedent": [
+                        {
+                          "id": "p-2",
+                          "version": "1",
+                          "statement": "In June, leadership rejected a request to slip Orion by a month without new funding.",
+                          "relevance": "Same kind of request: an unfunded slip. Leadership asked for a cost plan first.",
+                          "source": {
+                            "kind": "decision",
+                            "ref": "decision:orion-slip-2026-06"
+                          },
+                          "decidedBy": "group:leadership",
+                          "decidedAt": "2026-06-18T18:00:00Z",
+                          "entities": [
+                            "project:orion"
+                          ]
+                        }
+                      ],
+                      "constraints": [
+                        {
+                          "id": "c-40",
+                          "version": "1",
+                          "statement": "Lead with how the extra cost will be covered.",
+                          "level": "should",
+                          "basis": [
+                            "p-2"
+                          ]
+                        },
+                        {
+                          "id": "c-41",
+                          "version": "1",
+                          "statement": "Keep leadership updates to three bullets.",
+                          "level": "should",
+                          "basis": [
+                            "policy:leadership-update-format"
+                          ]
+                        }
+                      ],
+                      "watching": [
+                        "f-501",
+                        "f-502",
+                        "p-2",
+                        "c-40",
+                        "c-41"
+                      ],
+                      "expiresAt": "2026-10-06T16:41:10Z"
+                    }
+                  }
+                ],
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

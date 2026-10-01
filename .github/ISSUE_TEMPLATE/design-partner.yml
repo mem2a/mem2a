@@ -1,0 +1,30 @@
+name: Become a design partner
+description: Try Mem2A on real agents and help shape the draft.
+labels: ["design-partner"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Design partners run agents from more than one vendor, or build memory systems, and tell us where Mem2A helps and where it gets in the way. Share only what you're happy to make public here; we'll follow up to talk details privately. Rather not post in public at all? Reach the team through [Sentra's contact page](https://www.sentra.app/contact).
+  - type: input
+    id: organization
+    attributes:
+      label: Organization
+    validations:
+      required: true
+  - type: textarea
+    id: agents
+    attributes:
+      label: What agents do you run, or what do you build?
+      description: Roughly is fine, for example "personal agents from two vendors plus our own support agent".
+  - type: textarea
+    id: hope
+    attributes:
+      label: What would you want Mem2A to fix first?
+  - type: input
+    id: contact
+    attributes:
+      label: How should we reach you?
+      description: Your GitHub handle is fine.
+    validations:
+      required: true

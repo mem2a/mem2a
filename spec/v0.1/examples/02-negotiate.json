@@ -1,0 +1,202 @@
+{
+  "title": "Negotiate: Tom's agent is about to send Acme a renewal quote",
+  "description": "The agent opens a task with an intent and leaves a push callback. Memory answers with dossier version 12 and keeps the task open (INPUT_REQUIRED, phase awaiting-commit). The constraint says to hold the quote.",
+  "http": {
+    "request": {
+      "method": "POST",
+      "url": "https://memory.example.com/a2a/jsonrpc",
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Version": "1.0",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1",
+        "Authorization": "Bearer <delegated token: agent=sales-assistant, sub=user:tom>"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "SendMessage",
+        "params": {
+          "message": {
+            "messageId": "msg-tom-001",
+            "role": "ROLE_USER",
+            "parts": [
+              {
+                "mediaType": "application/vnd.mem2a.intent+json",
+                "data": {
+                  "action": "send_quote",
+                  "summary": "Send Acme a renewal quote",
+                  "entities": [
+                    "account:acme",
+                    "doc:acme-renewal-quote"
+                  ],
+                  "onBehalfOf": "user:tom",
+                  "deadline": "2026-09-30T17:00:00Z"
+                }
+              }
+            ],
+            "extensions": [
+              "https://w3id.org/mem2a/v0.1"
+            ]
+          },
+          "configuration": {
+            "taskPushNotificationConfig": {
+              "url": "https://sales-assistant.example.com/a2a/callbacks",
+              "authentication": {
+                "scheme": "Bearer",
+                "credentials": "<secret for this task>"
+              }
+            }
+          }
+        }
+      }
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "result": {
+          "task": {
+            "id": "task-acme-quote",
+            "contextId": "ctx-tom-acme",
+            "status": {
+              "state": "TASK_STATE_INPUT_REQUIRED",
+              "message": {
+                "messageId": "msg-mem-001",
+                "taskId": "task-acme-quote",
+                "contextId": "ctx-tom-acme",
+                "role": "ROLE_AGENT",
+                "parts": [
+                  {
+                    "text": "Hold the quote: legal paused Acme pricing on Friday. I'll call back if that changes."
+                  }
+                ],
+                "metadata": {
+                  "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit",
+                  "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-tom-001"
+                },
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              },
+              "timestamp": "2026-09-28T09:10:02Z"
+            },
+            "artifacts": [
+              {
+                "artifactId": "dossier",
+                "name": "dossier",
+                "parts": [
+                  {
+                    "mediaType": "application/vnd.mem2a.dossier+json",
+                    "data": {
+                      "version": "12",
+                      "summary": "Hold the quote: legal paused Acme pricing on Friday.",
+                      "facts": [
+                        {
+                          "id": "f-311",
+                          "version": "3",
+                          "statement": "Legal paused new pricing for Acme on Friday, pending a contract review.",
+                          "status": "confirmed",
+                          "confirmedBy": "user:general-counsel",
+                          "source": {
+                            "kind": "meeting",
+                            "ref": "meeting:legal-weekly-2026-09-25",
+                            "title": "Legal weekly",
+                            "at": "2026-09-25T17:00:00Z"
+                          },
+                          "entities": [
+                            "account:acme"
+                          ]
+                        },
+                        {
+                          "id": "f-208",
+                          "version": "1",
+                          "statement": "Acme's current contract renews on October 31, 2026.",
+                          "status": "confirmed",
+                          "confirmedBy": "system:crm",
+                          "source": {
+                            "kind": "record",
+                            "ref": "crm:opportunity/acme-renewal-2026"
+                          },
+                          "entities": [
+                            "account:acme"
+                          ]
+                        }
+                      ],
+                      "precedent": [
+                        {
+                          "id": "p-4",
+                          "version": "1",
+                          "statement": "In June, a renewal quote sent to Globex during a legal review had to be withdrawn.",
+                          "relevance": "Same situation: pricing sent while legal was still reviewing.",
+                          "source": {
+                            "kind": "decision",
+                            "ref": "decision:globex-quote-withdrawal-2026-06"
+                          },
+                          "decidedBy": "user:general-counsel",
+                          "decidedAt": "2026-06-12T15:00:00Z"
+                        }
+                      ],
+                      "constraints": [
+                        {
+                          "id": "c-17",
+                          "version": "1",
+                          "statement": "Do not send Acme new pricing until legal clears it.",
+                          "level": "must",
+                          "basis": [
+                            "f-311"
+                          ],
+                          "until": "Legal clears Acme pricing."
+                        }
+                      ],
+                      "watching": [
+                        "f-311",
+                        "f-208",
+                        "p-4",
+                        "c-17"
+                      ],
+                      "expiresAt": "2026-10-05T09:10:02Z"
+                    }
+                  }
+                ],
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              }
+            ],
+            "history": [
+              {
+                "messageId": "msg-tom-001",
+                "taskId": "task-acme-quote",
+                "contextId": "ctx-tom-acme",
+                "role": "ROLE_USER",
+                "parts": [
+                  {
+                    "mediaType": "application/vnd.mem2a.intent+json",
+                    "data": {
+                      "action": "send_quote",
+                      "summary": "Send Acme a renewal quote",
+                      "entities": [
+                        "account:acme",
+                        "doc:acme-renewal-quote"
+                      ],
+                      "onBehalfOf": "user:tom",
+                      "deadline": "2026-09-30T17:00:00Z"
+                    }
+                  }
+                ],
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

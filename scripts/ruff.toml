@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# The scripts follow the reference implementation's style (python/pyproject.toml).
+extend = "../python/pyproject.toml"

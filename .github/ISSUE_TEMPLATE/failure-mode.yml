@@ -1,0 +1,21 @@
+name: Failure mode
+description: A way agents fail together that Mem2A should prevent, or makes worse.
+labels: ["failure-mode"]
+body:
+  - type: textarea
+    id: failure
+    attributes:
+      label: The failure
+      description: What happens, step by step? Which agents and people are involved?
+    validations:
+      required: true
+  - type: textarea
+    id: mem2a
+    attributes:
+      label: How does Mem2A handle it today?
+      description: Optional. If you know, does the draft prevent it, miss it, or make it worse? Link the spec section if you can.
+  - type: textarea
+    id: idea
+    attributes:
+      label: Ideas for a fix
+      description: Optional.

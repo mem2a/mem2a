@@ -1,0 +1,48 @@
+# Mem2A 0.1 examples
+
+Worked A2A v1.0 exchanges over the JSON-RPC binding. They are non-normative, but [`conformance/`](../../../conformance) checks every Mem2A payload in them against the [schemas](../schemas) and the message rules in the [spec](../mem2a.md).
+
+## The Acme quote
+
+Tom's sales agent is about to send Acme a renewal quote. Example Corp's legal team paused Acme's pricing on Friday.
+
+| File | Step | What happens |
+| --- | --- | --- |
+| [01-agent-card.json](01-agent-card.json) | Discover | The memory's Agent Card declares Mem2A. |
+| [02-negotiate.json](02-negotiate.json) | Negotiate | Tom's agent sends its intent and leaves a push callback. Memory answers with dossier 12: hold the quote. |
+| [03-listen-update.json](03-listen-update.json) | Listen | On Monday, legal clears the pricing. Memory pushes dossier 13, then an update listing what changed. |
+| [05-commit.json](05-commit.json) | Commit | Tom's agent reads dossier 13, sends the quote, and reports against 13. Memory records a claim and completes the task with a receipt. |
+
+## A stale commit that records a conflict
+
+A separate story: Sam's agent approved a Globex discount at 10:02, and finance froze discounts above 10% at 10:05.
+
+| File | Step | What happens |
+| --- | --- | --- |
+| [04-commit-stale.json](04-commit-stale.json) | Commit | Sam's agent reports against dossier 20. Memory records nothing and points to dossier 21, which carries the freeze. The agent commits again against 21, listing the freeze as a conflict, and memory sends it to a person. |
+
+## The Titan update
+
+Maya's agent is about to tell leadership that project Titan will ship three weeks late.
+
+| File | Step | What happens |
+| --- | --- | --- |
+| [06-question.json](06-question.json) | Negotiate | Memory asks whether the new date is funded. |
+| [07-answer.json](07-answer.json) | Answer | It isn't. Memory answers with dossier 7, including a precedent the agent could never have searched for: leadership turned down an unfunded slip on another project. |
+
+## A refusal
+
+| File | Step | What happens |
+| --- | --- | --- |
+| [08-refusal.json](08-refusal.json) | Negotiate | The intent names Tom, but the credentials are Priya's. Memory refuses without revealing anything about Tom. |
+
+## Priya's side, and the other calls
+
+| File | Step | What happens |
+| --- | --- | --- |
+| [09-listen-stream-claim.json](09-listen-stream-claim.json) | Listen | Priya's agent keeps a `SubscribeToTask` stream open. When Tom's agent commits, her dossier becomes version 15, with Tom's report as an unconfirmed claim. |
+| [10-read-callback-cancel.json](10-read-callback-cancel.json) | Read, cancel | `GetTask` to read the current dossier before acting, `CreateTaskPushNotificationConfig` to add a callback, and `CancelTask` when Priya's agent decides not to follow up. |
+
+To send these requests yourself against a sandbox memory, see the [wire quickstart](../../../docs/wire-quickstart.md).
+
+Tokens, secrets and ids are placeholders.

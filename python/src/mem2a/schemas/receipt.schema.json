@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/mem2a/v0.1/schemas/receipt.schema.json",
+  "title": "Mem2A receipt",
+  "description": "Memory's record of an accepted commit. Sent by memory as the single data part (mediaType `application/vnd.mem2a.receipt+json`) of the task artifact with artifactId `receipt`, when the task completes.",
+  "type": "object",
+  "required": [
+    "commitId",
+    "basedOn",
+    "recorded",
+    "conflicts",
+    "at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "commitId": {
+      "$ref": "common.schema.json#/$defs/Id"
+    },
+    "basedOn": {
+      "$ref": "common.schema.json#/$defs/Version"
+    },
+    "recorded": {
+      "description": "The facts memory created from the commit's claims, in the same order. All have status `claim`.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "factId",
+          "version",
+          "status"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "factId": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "version": {
+            "$ref": "common.schema.json#/$defs/Version"
+          },
+          "status": {
+            "const": "claim"
+          }
+        }
+      }
+    },
+    "conflicts": {
+      "description": "Ids from the commit's `conflicts`, as recorded for a person to review. Empty if there were none.",
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/Id"
+      },
+      "maxItems": 64,
+      "uniqueItems": true
+    },
+    "at": {
+      "$ref": "common.schema.json#/$defs/DateTime"
+    },
+    "metadata": {
+      "$ref": "common.schema.json#/$defs/Metadata"
+    }
+  }
+}

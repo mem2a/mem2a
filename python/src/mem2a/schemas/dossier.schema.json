@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/mem2a/v0.1/schemas/dossier.schema.json",
+  "title": "Mem2A dossier",
+  "description": "What memory tells an agent before it acts. Sent by memory as the single data part (mediaType `application/vnd.mem2a.dossier+json`) of the task artifact with artifactId `dossier`. Replaced whole, with a new version, whenever it changes.",
+  "type": "object",
+  "required": [
+    "version",
+    "summary",
+    "facts",
+    "precedent",
+    "constraints",
+    "watching"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "$ref": "common.schema.json#/$defs/Version"
+    },
+    "summary": {
+      "description": "A short brief an agent or a person can read at a glance, for example `Hold the quote: legal paused Acme pricing on Friday.`",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/Fact"
+      },
+      "maxItems": 256
+    },
+    "precedent": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/Precedent"
+      },
+      "maxItems": 64
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/Constraint"
+      },
+      "maxItems": 64
+    },
+    "watching": {
+      "description": "Exactly the ids of the facts, precedent and constraints in this dossier: memory watches them, and a change to any of them produces a new dossier version and an update.",
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/Id"
+      },
+      "uniqueItems": true,
+      "maxItems": 384
+    },
+    "expiresAt": {
+      "description": "When memory will stop watching if the agent has not committed. Present whenever memory declares a `watchTimeout`.",
+      "$ref": "common.schema.json#/$defs/DateTime"
+    },
+    "metadata": {
+      "$ref": "common.schema.json#/$defs/Metadata"
+    }
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "title": "Negotiate with a question: Maya's agent is about to update leadership on the Titan delay",
+  "description": "Memory can't pick the right precedent without knowing whether the new date is funded, so it asks before preparing a dossier. The task stays open in INPUT_REQUIRED with phase question.",
+  "http": {
+    "request": {
+      "method": "POST",
+      "url": "https://memory.example.com/a2a/jsonrpc",
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Version": "1.0",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1",
+        "Authorization": "Bearer <delegated token: agent=chief-of-staff-agent, sub=user:maya>"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "10",
+        "method": "SendMessage",
+        "params": {
+          "message": {
+            "messageId": "msg-maya-001",
+            "role": "ROLE_USER",
+            "parts": [
+              {
+                "mediaType": "application/vnd.mem2a.intent+json",
+                "data": {
+                  "action": "update_leadership",
+                  "summary": "Update leadership on the Titan delay",
+                  "entities": [
+                    "project:titan"
+                  ],
+                  "onBehalfOf": "user:maya",
+                  "draft": "Titan will ship three weeks late, on November 20. The integration tests found a data migration issue that needs a rewrite."
+                }
+              }
+            ],
+            "extensions": [
+              "https://w3id.org/mem2a/v0.1"
+            ]
+          }
+        }
+      }
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "10",
+        "result": {
+          "task": {
+            "id": "task-titan-update",
+            "contextId": "ctx-maya-titan",
+            "status": {
+              "state": "TASK_STATE_INPUT_REQUIRED",
+              "message": {
+                "messageId": "msg-mem-101",
+                "taskId": "task-titan-update",
+                "contextId": "ctx-maya-titan",
+                "role": "ROLE_AGENT",
+                "parts": [
+                  {
+                    "text": "Before I pull this together: is the new date funded?"
+                  },
+                  {
+                    "mediaType": "application/vnd.mem2a.question+json",
+                    "data": {
+                      "id": "q-1",
+                      "text": "Is the new date funded?",
+                      "options": [
+                        "Yes",
+                        "No",
+                        "Partly"
+                      ],
+                      "expiresAt": "2026-10-06T16:40:03Z"
+                    }
+                  }
+                ],
+                "metadata": {
+                  "https://w3id.org/mem2a/v0.1/phase": "question",
+                  "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-maya-001"
+                },
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              },
+              "timestamp": "2026-09-29T16:40:03Z"
+            },
+            "history": [
+              {
+                "messageId": "msg-maya-001",
+                "taskId": "task-titan-update",
+                "contextId": "ctx-maya-titan",
+                "role": "ROLE_USER",
+                "parts": [
+                  {
+                    "mediaType": "application/vnd.mem2a.intent+json",
+                    "data": {
+                      "action": "update_leadership",
+                      "summary": "Update leadership on the Titan delay",
+                      "entities": [
+                        "project:titan"
+                      ],
+                      "onBehalfOf": "user:maya",
+                      "draft": "Titan will ship three weeks late, on November 20. The integration tests found a data migration issue that needs a rewrite."
+                    }
+                  }
+                ],
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

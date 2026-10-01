@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/mem2a/v0.1/schemas/commit.schema.json",
+  "title": "Mem2A commit",
+  "description": "The agent's report of what it did, against the latest dossier version it has read. Sent by the agent as a data part (mediaType `application/vnd.mem2a.commit+json`) in a follow-up message on the same task.",
+  "type": "object",
+  "required": [
+    "basedOn",
+    "action",
+    "outcome",
+    "summary",
+    "claims"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "basedOn": {
+      "description": "The version of the latest dossier the agent has read: normally the one it acted on, or, after a `stale-dossier` error, the current one. Memory refuses the commit unless it equals the task's current dossier version.",
+      "$ref": "common.schema.json#/$defs/Version"
+    },
+    "action": {
+      "description": "The action taken. SHOULD equal the intent's `action`.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "done",
+        "partial",
+        "failed"
+      ]
+    },
+    "summary": {
+      "description": "What the agent did, in one plain sentence.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "claims": {
+      "description": "What is now true because of the action. Each becomes a fact with status `claim`.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "common.schema.json#/$defs/Claim"
+      },
+      "maxItems": 32
+    },
+    "conflicts": {
+      "description": "Items of the `basedOn` dossier that the action, already taken, goes against. Required for every such item, whether or not the commit was refused as stale first. Memory records them and routes them to a person. Each id at most once, and each must name an item of the `basedOn` dossier.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "explanation"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        }
+      },
+      "maxItems": 64
+    },
+    "metadata": {
+      "$ref": "common.schema.json#/$defs/Metadata"
+    }
+  }
+}

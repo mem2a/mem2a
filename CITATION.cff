@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: If you cite Mem2A, please cite the specification as below.
+type: software
+title: "Mem2A: a memory-to-agent protocol"
+abstract: >-
+  Mem2A is an open protocol, built as an extension of the A2A protocol, that
+  lets any AI agent consult a company's shared memory before it acts, hear
+  when that changes, and report back after.
+authors:
+  - name: The Mem2A authors
+version: 0.1.0-draft
+date-released: 2026-10-01
+license: Apache-2.0
+url: "https://mem2a.github.io/mem2a/"
+repository-code: "https://github.com/mem2a/mem2a"
+keywords:
+  - A2A
+  - AI agents
+  - agent memory
+  - protocol
+  - specification
