@@ -6,4 +6,4 @@ In short: be respectful, assume good faith, argue about ideas rather than people
 
 ## Reporting
 
-Report unacceptable behavior privately to the maintainers listed in [MAINTAINERS.md](MAINTAINERS.md). Reports are handled confidentially, and the maintainers will respond as the Covenant's enforcement guidelines describe.
+Report unacceptable behavior privately to the maintainers listed in [MAINTAINERS.md](MAINTAINERS.md), or through [Sentra's contact page](https://www.sentra.app/contact). Reports are handled confidentially, and the maintainers will respond as the Covenant's enforcement guidelines describe.

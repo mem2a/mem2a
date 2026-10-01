@@ -2,11 +2,13 @@
 """The ``mem2a`` command (also ``python -m mem2a``).
 
     mem2a serve [--seed acme|titan|empty] [--host 127.0.0.1] [--port 8000] [--dev-admin]
+                [--push-origin ORIGIN]...
     mem2a conform --url URL --token TOKEN ...     (same as mem2a-conform)
 
 ``mem2a serve`` runs a sandbox memory: seeded with one of the spec's stories,
-accepting unsigned dev tokens, and sending push notifications to this machine
-only. Never expose it.
+accepting unsigned dev tokens, and sending push notifications only to the
+webhook origins registered for agents: any port on this machine, unless
+``--push-origin`` names others. Never expose it.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ import argparse
 import json
 import logging
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -25,7 +27,14 @@ from mem2a import conform, seeds
 from mem2a.auth import DevTokenAuthenticator
 from mem2a.constants import EXTENSION_URI, INTENT
 from mem2a.seeds import SEEDS, seeded_engine
-from mem2a.server import LOCALHOST_ORIGINS, RPC_PATH, Mem2AServer, create_app, listen_socket
+from mem2a.server import (
+    LOCALHOST_ORIGINS,
+    RPC_PATH,
+    Mem2AServer,
+    PushOrigins,
+    create_app,
+    listen_socket,
+)
 
 
 def sandbox(
@@ -33,12 +42,15 @@ def sandbox(
     *,
     url: str,
     dev_admin: bool = False,
-    push_origins: Iterable[str] = LOCALHOST_ORIGINS,
+    push_origins: PushOrigins = LOCALHOST_ORIGINS,
     **options: Any,
 ) -> Mem2AServer:
     """The memory ``mem2a serve`` runs: a seeded engine, dev tokens, and push
-    notifications to `push_origins` only. `options` go to `create_app`."""
-    # Webhooks on this machine or LAN: call them directly, never through a proxy.
+    notifications only to `push_origins`, registered for every agent (or per
+    agent, given a mapping). `options` go to `create_app`."""
+    # Registered origins work wherever they point (a LAN host, say), and
+    # memory calls them directly, never through a proxy.
+    options.setdefault('push_url_validator', None)
     options.setdefault('push_client', httpx.AsyncClient(timeout=10, trust_env=False))
     return create_app(
         seeded_engine(seed),
@@ -60,7 +72,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         'serve',
         help='run a sandbox memory with dev tokens',
         description='Run a sandbox memory seeded with one of the spec stories. It accepts '
-        'unsigned dev tokens and calls webhooks on this machine only: never expose it.',
+        'unsigned dev tokens, and sends push notifications only to the webhook origins '
+        'registered with --push-origin (by default, any port on this machine). Never '
+        'expose it.',
     )
     serve.add_argument(
         '--seed',
@@ -80,8 +94,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         action='append',
         dest='push_origins',
         metavar='ORIGIN',
-        help='a webhook origin to allow, such as http://10.0.0.5:9000 (repeatable); '
-        'default: this machine, any port',
+        help='register a webhook origin for every agent, such as http://10.0.0.5:9000 or '
+        'http://10.0.0.5:* for any port (repeatable). Replaces the default: '
+        'http(s)://127.0.0.1, localhost and [::1], any port',
     )
     commands.add_parser('conform', help='check any memory against Mem2A v0.1', add_help=False)
     parsed = parser.parse_args(args)
@@ -95,7 +110,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def serve_sandbox(
-    *, seed: str, host: str, port: int, dev_admin: bool, push_origins: Iterable[str]
+    *, seed: str, host: str, port: int, dev_admin: bool, push_origins: Sequence[str]
 ) -> int:
     """Bind, print how to talk to the memory, then serve until interrupted."""
     try:
@@ -108,7 +123,12 @@ def serve_sandbox(
     url = f'http://{f"[{shown}]" if ":" in shown else shown}:{port}'
 
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
-    server = sandbox(seed, url=url, dev_admin=dev_admin, push_origins=push_origins)
+    try:
+        server = sandbox(seed, url=url, dev_admin=dev_admin, push_origins=push_origins)
+    except ValueError as error:  # a --push-origin that isn't an origin
+        print(f'mem2a serve: {error}', file=sys.stderr)
+        sock.close()
+        return 2
     print(banner(seed, url, dev_admin=dev_admin), flush=True)
     config = uvicorn.Config(server.app, log_level='info', timeout_graceful_shutdown=2)
     uvicorn.Server(config).run(sockets=[sock])

@@ -13,9 +13,10 @@ By default it records nothing in memory: it opens tasks for `--principal`
 about `--entity` and `--action`, sends commits a conforming memory must
 refuse, and cancels what it opened. `--allow-writes` also commits a claim
 (marked as a test) and retries it. `--dev-admin` uses a reference-style admin
-API (``POST /dev/facts``, as in ``mem2a serve --dev-admin``) to add, then
-retire, a fact, and checks that the change reaches both a push webhook and a
-SubscribeToTask stream; memory must be able to call this machine.
+API (as in ``mem2a serve --dev-admin``) to add test facts, then retire them:
+it checks that a new fact reaches both a push webhook and a SubscribeToTask
+stream (memory must be allowed to call this machine), and that a fact whose
+source the principal can no longer read is removed in an update.
 """
 
 from __future__ import annotations
@@ -207,10 +208,11 @@ class Checker:
             ('invalid commit', '8.4.2', self.invalid_commit),
             ('unexpected message', '7.5', self.unexpected_message),
             ('binding', '10.7', self.binding),
-            ('reads', '8.3.3, 10.3', self.reads),
+            ('reads', '8.3.3', self.reads),
             ('cancel', '8.5', self.cancel),
             ('commit and retry', '8.4.5, 8.4.8', self.commit_and_retry),
             ('listen', '8.3.2', self.listen),
+            ('access', '8.3.4, 10.3', self.access),
         ]
         try:
             for name, section, check in checks:
@@ -523,7 +525,68 @@ class Checker:
         )
         return f'a new fact reached push and subscribe as dossier {seen[0]} (was {old}){note}'
 
+    async def access(self) -> str:
+        """A source the principal can no longer read: its fact is removed."""
+        if not self.options.dev_admin:
+            raise _Skip('needs --dev-admin (a reference-style admin API)')
+        task = await self._past_questions(await self.send(self._message('intent', self._intent())))
+        self._expect_phase(task, 'TASK_STATE_INPUT_REQUIRED', 'awaiting-commit')
+        fact_id = f'conform-{uuid.uuid4().hex[:8]}'
+        source = f'other:mem2a-conform-{fact_id}'
+        added = False
+        try:
+            await self._admin(
+                '/dev/facts',
+                {
+                    'id': fact_id,
+                    'statement': TEST_NOTE,
+                    'source': source,
+                    'confirmedBy': 'system:mem2a-conform',
+                    'entities': [self.options.entity],
+                },
+            )
+            added = True
+            before = _artifact_part(await self._get(task['id']), 'dossier') or {}
+            _expect(fact_id in before.get('watching', []), 'a new fact did not reach the dossier')
+            readers = {'readers': ['group:mem2a-conform-nobody']}
+            updated = await self._admin(f'/dev/sources/{source}/readers', readers)
+            _expect(task['id'] in updated, f'updatedTasks {updated} does not list the task')
+            now = await self._get(task['id'])
+            after = _artifact_part(now, 'dossier') or {}
+            _expect(fact_id not in json.dumps(after), 'the dossier still shows the fact')
+            _expect(after.get('version') != before['version'], 'the dossier version did not change')
+            update = _status_part(now, 'update') or {}
+            _expect(
+                (update.get('previousVersion'), update.get('dossierVersion'))
+                == (before['version'], after.get('version')),
+                f'the update names {update.get("previousVersion")} -> '
+                f'{update.get("dossierVersion")}',
+            )
+            _expect(
+                {'id': fact_id, 'kind': 'fact', 'change': 'removed'} in update.get('changes', []),
+                'the update does not list the fact as removed',
+            )
+            metadata = _message(now).get('metadata', {})
+            _expect(
+                metadata.get(PHASE_KEY) == 'awaiting-commit' and IN_REPLY_TO_KEY not in metadata,
+                'the update is not an awaiting-commit status without inReplyTo',
+            )
+        finally:
+            if added:  # leave memory as we found it, as far as the admin API allows
+                await self._admin(f'/dev/facts/{fact_id}/retire', {'note': TEST_NOTE})
+            await self._cancel(task['id'])
+        return (
+            f'unreadable source: its fact removed in dossier {after["version"]} '
+            f'(was {before["version"]})'
+        )
+
     # ----------------------------------------------------------- helpers
+    async def _get(self, task_id: str) -> Json:
+        task = (await self.rpc('GetTask', {'id': task_id})).get('result')
+        if not isinstance(task, dict):
+            raise _Fail(f'GetTask {task_id} returned no task')
+        return task
+
     async def rpc(
         self, method: str, params: Json, *, token: str | None = None, activate: bool = True
     ) -> Json:
@@ -883,8 +946,11 @@ async def check_memory(options: Options) -> list[Result]:
 def render(url: str, results: Sequence[Result]) -> str:
     """The human-readable report."""
     width = max(len(r.check) for r in results)
+    sections = max(len(r.section) for r in results)
     lines = [f'mem2a-conform: {url}', '']
-    lines += [f'{r.status:<4}  {r.section:<10}  {r.check:<{width}}  {r.detail}' for r in results]
+    lines += [
+        f'{r.status:<4}  {r.section:<{sections}}  {r.check:<{width}}  {r.detail}' for r in results
+    ]
     counts = {
         status: sum(r.status == status for r in results) for status in ('PASS', 'FAIL', 'SKIP')
     }

@@ -11,8 +11,15 @@ Tom's sales agent is about to send Acme a renewal quote. Example Corp's legal te
 | [01-agent-card.json](01-agent-card.json) | Discover | The memory's Agent Card declares Mem2A. |
 | [02-negotiate.json](02-negotiate.json) | Negotiate | Tom's agent sends its intent and leaves a push callback. Memory answers with dossier 12: hold the quote. |
 | [03-listen-update.json](03-listen-update.json) | Listen | On Monday, legal clears the pricing. Memory pushes dossier 13, then an update listing what changed. |
-| [04-commit-stale.json](04-commit-stale.json) | Commit | If the agent had reported against dossier 12, memory would refuse and record nothing. |
-| [05-commit.json](05-commit.json) | Commit | The agent reports against dossier 13. Memory records a claim and completes the task with a receipt. |
+| [05-commit.json](05-commit.json) | Commit | Tom's agent reads dossier 13, sends the quote, and reports against 13. Memory records a claim and completes the task with a receipt. |
+
+## A stale commit that records a conflict
+
+A separate story: Sam's agent approved a Globex discount at 10:02, and finance froze discounts above 10% at 10:05.
+
+| File | Step | What happens |
+| --- | --- | --- |
+| [04-commit-stale.json](04-commit-stale.json) | Commit | Sam's agent reports against dossier 20. Memory records nothing and points to dossier 21, which carries the freeze. The agent commits again against 21, listing the freeze as a conflict, and memory sends it to a person. |
 
 ## The Titan update
 

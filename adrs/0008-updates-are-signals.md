@@ -4,7 +4,7 @@
 
 ## Context
 
-Memory sends updates while a task waits in `TASK_STATE_INPUT_REQUIRED`. A2A is ambiguous about whether a `SubscribeToTask` stream stays open in that state: §3.1.6 ends streams at terminal states, while the HTTP+JSON binding describes streams that close at interrupted states, and SDKs differ. A2A push notifications are delivered at least once, may be retried or dropped, and are authenticated with a shared secret. If every pushed dossier were authoritative, a late, replayed or forged push could steer an agent.
+Memory sends updates while a task waits in `TASK_STATE_INPUT_REQUIRED`. A2A is ambiguous about whether a `SubscribeToTask` stream stays open in that state: §3.1.6 ends streams at terminal states, while the HTTP+JSON binding (§11.7) describes streams that close at interrupted states, and SDKs differ. A2A push notifications are delivered at least once, may be retried or dropped, and are authenticated with a shared secret. If every pushed dossier were authoritative, a late, replayed or forged push could steer an agent.
 
 ## Decision
 

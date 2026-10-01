@@ -51,11 +51,11 @@ Search-style memory, such as retrieval over documents or MCP resources, answers 
 ### 1.2 Design goals
 
 1. **Memory speaks first.** An agent learns about changes without asking again.
-2. **Any vendor.** Mem2A is built on A2A, so an agent from any vendor can use any memory that implements it.
-3. **One task per action.** The task is the unit of watching, audit and cleanup.
-4. **Memory carries the rules; enforcement lives elsewhere.** Anything an agent can read, it can try to game. Blocking an action is the job of a sandbox or watchdog outside the agent's reach.
-5. **Permissions follow the source.** An agent never sees what its principal couldn't read.
-6. **Every fact has a receipt.** What an agent reports stays a claim until a person or a system of record confirms it.
+2. **Any vendor.** Mem2A is built on A2A, so an agent from any vendor can use any memory that implements it ([ADR 0001](../../adrs/0001-build-on-a2a.md)).
+3. **One task per action.** The task is the unit of watching, audit and cleanup ([ADR 0002](../../adrs/0002-one-task-per-action.md)).
+4. **Memory carries the rules; enforcement lives elsewhere.** Anything an agent can read, it can try to game. Blocking an action is the job of a sandbox or watchdog outside the agent's reach ([ADR 0003](../../adrs/0003-memory-carries-rules-enforcement-elsewhere.md)).
+5. **Permissions follow the source.** An agent never sees what its principal couldn't read ([ADR 0005](../../adrs/0005-permissions-follow-the-source.md)).
+6. **Every fact can be traced.** Every fact names its source. What an agent reports stays a claim until a person or a system of record confirms it ([ADR 0004](../../adrs/0004-claims-are-not-facts.md)).
 
 ### 1.3 Non-goals
 
@@ -68,12 +68,13 @@ Search-style memory, such as retrieval over documents or MCP resources, answers 
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 [[RFC2119](#15-references)] [[RFC8174](#15-references)] when, and only when, they appear in all capitals, as shown here.
 
-1. "A2A" means the A2A Protocol v1.0 [[A2A](#15-references)]. Agent Card, Task, Message, Part, Artifact, `SendMessage`, `SubscribeToTask`, push notification and the `TASK_STATE_*` states have the meanings defined there.
+1. "A2A" means the A2A Protocol v1.0 [[A2A](#15-references)]. Agent Card, Task, Message, Part, Artifact, `SendMessage`, `SubscribeToTask`, push notification and the `TASK_STATE_*` states have the meanings defined there. The [A2A primer](../../docs/a2a-primer.md) explains the parts of A2A this specification uses, and the [glossary](../../docs/glossary.md) defines every term in one place.
 2. Examples use A2A's JSON-RPC binding and its JSON field names (lowerCamelCase). Mem2A works over any A2A binding.
 3. `URI` means the extension URI, `https://w3id.org/mem2a/v0.1`.
 4. The JSON Schemas in [`schemas/`](schemas) are normative for syntax; this text is normative for meaning. Validators MUST enforce the schemas' `format` keywords. Please report any disagreement between the two as a bug.
 5. Senders MUST produce payloads that validate against the schemas, and MUST put anything implementation-specific in `metadata`, under keys namespaced with a URI. Receivers MUST NOT reject a payload only because it contains members this version doesn't define; they MUST ignore those members, and validate what remains.
-6. Mem2A payloads contain no JSON numbers. Versions, identifiers, times and durations are strings, because A2A carries data parts as protobuf `Value`s, which turn integers into doubles.
+6. Mem2A payloads contain no JSON numbers. Versions, identifiers, times and durations are strings, because A2A carries data parts as protobuf `Value`s, which turn integers into doubles ([ADR 0007](../../adrs/0007-versions-are-opaque-strings.md)).
+7. Links to [architecture decision records](../../adrs) (ADRs) explain why a rule is the way it is. They are not part of the specification.
 
 ## 3. Terminology
 
@@ -82,19 +83,26 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | **Memory** | An A2A agent that holds a company's shared memory and implements this extension as a server. |
 | **Agent** | An A2A client that is about to take an action and uses Mem2A first. |
 | **Principal** | The person, group or system an agent acts for. |
-| **Intent** | What an agent is about to do, the things it touches, and who it acts for. |
+| **Entity** | A thing an intent or a fact is about, named by a reference such as `account:acme` or `project:titan`. |
+| **Intent** | What an agent is about to do, the entities it touches, and who it acts for. |
 | **Fact** | A statement memory holds, with an id, a version, a source and a status. |
 | **Confirmed fact** | A fact that a person or a system of record stands behind. |
 | **Claim** | A fact reported by an agent and not yet confirmed. |
 | **System of record** | A system the company designates as authoritative for some kind of fact, such as a CRM for quotes sent. |
-| **Source** | Where a fact, precedent or constraint came from: its receipt. |
+| **Source** | Where a fact or precedent came from, such as a meeting, an email or a CRM record. Every fact and precedent names one, so a person can trace it. |
 | **Precedent** | An earlier decision that bears on an intent. |
-| **Constraint** | A rule that applies to an intent right now, derived from confirmed facts, precedent or policy. |
+| **Policy** | A rule that people configure in memory, such as "hold new pricing while legal reviews a contract". Memory applies it to an intent as a constraint. |
+| **Constraint** | A rule that applies to an intent right now. Its `basis` lists the confirmed facts, precedent or policy it derives from. Its `level` is `must` (the company requires it) or `should` (the company expects it unless there is a good reason); these levels are the company's, not the key words of [section 2](#2-conventions). |
 | **Item** | A fact, precedent or constraint. Item ids are unique across all three kinds within a memory. |
+| **Version** | An opaque string that names one content of a dossier or an item ([7.4](#74-identifiers-and-versions)). |
 | **Dossier** | Memory's versioned answer to an intent: the relevant items. |
-| **Watch** | The set of items a task's dossier depends on. |
+| **Phase** | Mem2A's name for where a task stands, carried next to the A2A task state ([7.2](#72-phase)). |
+| **Open task** | A task that hasn't reached a terminal state. |
+| **Watch** | While a task is in phase `awaiting-commit`, memory watches the items of its dossier, and the intent for new relevant items, and sends a new dossier version when they change ([8.3](#83-listen)). |
+| **Update** | Memory's notice that a task's dossier has a new version, listing what changed. |
 | **Commit** | An agent's report of what it did, against a dossier version. |
-| **Receipt** | Memory's record of an accepted commit. |
+| **Conflict** | An item of the dossier a commit is based on that the agent's action went against. The commit lists it, and memory routes it to a person. |
+| **Receipt** | Memory's record of an accepted commit: the claims it recorded and the conflicts it noted. |
 
 ## 4. Overview
 
@@ -180,6 +188,32 @@ Mem2A payloads travel as A2A data parts. Each has a `mediaType` that names its k
 2. Mem2A adds no task states and no RPC methods. It qualifies A2A's states with the phase, which is how A2A extensions are meant to add sub-states. Version 0.1 defines no flow that requires `reauth`; a memory that uses `TASK_STATE_AUTH_REQUIRED` for its own reasons labels it so.
 3. Every status message memory produces in reply to an agent message MUST carry the metadata key `https://w3id.org/mem2a/v0.1/inReplyTo`, set to that message's `messageId`. Updates ([8.3](#83-listen)) carry none. This lets an agent tell its reply from a concurrent update.
 
+*Non-normative:* how a task moves between phases. Memory may skip `working` and answer in its first response, and any open phase can also end in `failed` ([8.6](#86-failure)).
+
+```mermaid
+flowchart LR
+    S(( )) -->|intent| W[working]
+    subgraph open [Open]
+        W -->|memory asks| Q[question]
+        Q -->|answer| W
+        W -->|dossier| A["awaiting-commit<br/>(updates arrive here)"]
+    end
+    subgraph ended [Ended: the task never changes again]
+        C[committed]
+        X[canceled]
+        E[expired]
+        R[refused]
+    end
+    W -->|refusal| R
+    A -->|commit recorded| C
+    A -->|CancelTask| X
+    Q -->|CancelTask| X
+    A -->|timeout| E
+    Q -->|timeout| E
+```
+
+An agent message that memory doesn't accept, such as a stale commit, leaves the task in the phase it was in.
+
 ### 7.3 Artifacts
 
 1. The dossier MUST be carried in an artifact whose `artifactId` and `name` are both `dossier`, containing exactly one dossier part. When the dossier changes, memory MUST replace the artifact whole (same `artifactId`, `append` false) with a dossier whose `version` differs from every earlier version in the task.
@@ -207,7 +241,11 @@ Memory MUST handle agent messages as follows. "Unchanged" means the task keeps i
 | A message whose `messageId` it has already processed for the task | Any | Returns the task as it stands, without processing the message again ([8.4.8](#84-commit)). |
 | Anything else | Terminal | A2A's error for messages to a task in a terminal state. |
 
+Mem2A errors travel as error parts in status messages, not as JSON-RPC errors, because most leave the task open: the agent can correct its message and send it again on the same task, and the task history shows what happened. A2A's own errors still apply where A2A defines them: for unauthenticated or unactivated requests ([6.3](#6-activation)), for tasks the caller may not see ([10.7](#10-identity-and-permissions)), for messages to terminal tasks, and for requests that aren't messages. For example, memory refuses a push notification config beyond its cap with A2A's `InvalidParamsError`, whose message starts with `limit-exceeded` ([11.8](#11-security-considerations)).
+
 ## 8. The task lifecycle
+
+Each action an agent takes is one A2A task. It opens with the intent and ends with a commit, a cancel, a refusal or an expiry, so the task is the unit of watching, audit and cleanup ([ADR 0002](../../adrs/0002-one-task-per-action.md)).
 
 ### 8.1 Negotiate
 
@@ -226,7 +264,7 @@ Memory MUST handle agent messages as follows. "Unchanged" means the task keeps i
 
    Memory MAY refuse for other reasons with the code `refused`, as long as the refusal doesn't reveal anything the principal can't see ([10.4](#10-identity-and-permissions)).
 4. Memory MUST emit the dossier artifact before the status update that moves the task to `awaiting-commit`, so that a blocking `SendMessage` response contains the dossier.
-5. The dossier MUST contain only items the principal may see ([10.3](#10-identity-and-permissions)), and its `watching` MUST list exactly the ids of the items it contains.
+5. The dossier MUST contain only items the principal may see ([10.3](#10-identity-and-permissions)), and its `watching` MUST list exactly the ids of the items it contains: no fewer, so the agent knows that every item it was given is watched, and no more, so `watching` can't reveal items the principal can't see ([10.4](#10-identity-and-permissions)).
 6. If memory declares a `watchTimeout`, every dossier and question MUST carry `expiresAt`.
 7. What goes into a dossier (which facts, which precedent, which constraints) is memory's judgment. This specification constrains its form, its permissions and its provenance, not its content.
 
@@ -248,19 +286,19 @@ Memory MUST handle agent messages as follows. "Unchanged" means the task keeps i
 3. Memory MUST deliver these events through A2A's standard mechanisms: to every push notification config registered for the task, and on every open `SubscribeToTask` stream. `GetTask` MUST reflect them.
 4. An update MUST describe an item the principal can no longer see only as `removed`, exactly as it describes a retired item, so that updates don't reveal which happened.
 5. Memory MUST re-check the principal's access ([10.3](#10-identity-and-permissions)) when it prepares each update, not only when the task began.
-6. Memory SHOULD keep `SubscribeToTask` streams open while a task is in phase `awaiting-commit`. A2A's HTTP+JSON binding describes streams that close at an interrupted state such as `TASK_STATE_INPUT_REQUIRED`, and some SDKs do close them; Mem2A asks memory to keep them open and agents to cope when they close.
-7. Push notifications and stream events are signals that the dossier changed. Before acting, the agent MUST read the current dossier, either with `GetTask` or from a `SubscribeToTask` stream it has held open continuously since before the latest update, and MUST act only on that version. When a stream closes on a task that isn't terminal, an agent that still intends to act MUST subscribe again or poll.
+6. Memory SHOULD keep `SubscribeToTask` streams open while a task is in phase `awaiting-commit`. A2A's HTTP+JSON binding (A2A §11.7) describes streams that close at an interrupted state such as `TASK_STATE_INPUT_REQUIRED`, and some SDKs do close them; Mem2A asks memory to keep them open and agents to cope when they close.
+7. Push notifications and stream events are signals that the dossier changed. Before acting, the agent MUST read the current dossier, either with `GetTask` or from a `SubscribeToTask` stream it has held open continuously since before the latest update, and MUST act only on that version. When a stream closes on a task that isn't terminal, an agent that still intends to act MUST subscribe again or poll. A push notification can be lost, late, repeated or forged; reading the dossier before acting makes all four harmless ([ADR 0008](../../adrs/0008-updates-are-signals.md)).
 8. The agent SHOULD register a push notification config (in `SendMessage`, or with `CreateTaskPushNotificationConfig`) or keep a `SubscribeToTask` stream open, so that it hears about changes while it works.
 9. When an update arrives, the agent SHOULD re-check its planned action against the new constraints.
-10. Push delivery: memory MUST deliver push notifications only to origins the company has registered for the agent, MUST NOT follow redirects, and SHOULD check the resolved address when it connects ([11.4](#11-security-considerations)). It MUST authenticate to the webhook as A2A requires, MUST deliver a task's events to each webhook in order, and SHOULD retry failed deliveries with backoff. Memory MUST NOT delay its replies to the agent while it delivers push notifications.
+10. Push delivery: memory MUST deliver push notifications only to origins the company has registered for the agent ([10.2](#10-identity-and-permissions)), MUST NOT follow redirects, and SHOULD check the resolved address when it connects ([11.4](#11-security-considerations)). It SHOULD refuse a push notification config whose URL isn't on a registered origin, with A2A's `InvalidParamsError`, rather than accept it and never deliver. It MUST authenticate to the webhook as A2A requires, MUST deliver a task's events to each webhook in order, and SHOULD retry failed deliveries with backoff. Memory MUST NOT delay its replies to the agent while it delivers push notifications.
 11. The watch ends when the task reaches a terminal state. If memory declares a `watchTimeout` and no commit arrives by the dossier's `expiresAt`, memory MAY cancel the task with phase `expired` and an error with code `watch-expired`. Recording an action after its watch expired is an [open question](https://github.com/mem2a/mem2a/issues/9).
 
 ### 8.4 Commit
 
 1. After acting, or trying to, the agent MUST send a `SendMessage` with the task's `taskId` and `contextId`, containing one commit. `basedOn` MUST be the version of the dossier the agent relied on.
 2. If the commit doesn't validate, or its `conflicts` name items that aren't in the `basedOn` dossier, memory MUST keep the task in phase `awaiting-commit` and include an error with code `invalid-commit`.
-3. If `basedOn` is not the task's current dossier version, memory MUST NOT record anything from the commit. It MUST keep the task in phase `awaiting-commit` and include an error with code `stale-dossier` whose `currentVersion` is the current version. The current version is the latest dossier memory has produced for the task, whether or not the agent has received it yet. If the agent may not have received the update that produced it, because that update is still being delivered, the status SHOULD also carry that update part.
-4. After a `stale-dossier` error, the agent MUST read the current dossier and commit again with `basedOn` set to its version. This is how an action taken on old information still gets recorded, but only after the agent has seen what changed.
+3. If `basedOn` is not the task's current dossier version, memory MUST NOT record anything from the commit. It MUST keep the task in phase `awaiting-commit` and include an error with code `stale-dossier` whose `currentVersion` is the current version. The current version is the latest dossier memory has produced for the task, whether or not the agent has received it yet. If the agent may not have received the update that produced it, because that update is still being delivered, the status SHOULD also carry that update part ([ADR 0006](../../adrs/0006-stale-commits-are-refused-then-reconciled.md)).
+4. After a `stale-dossier` error, the agent MUST read the current dossier and commit again with `basedOn` set to its version. This is how an action taken on old information still gets recorded, but only after the agent has seen what changed. Because a commit's `conflicts` can only name items of its `basedOn` dossier ([8.4.2](#84-commit)), committing again is also how the agent reports that its action went against something it hadn't seen, as in [example 04](examples/04-commit-stale.json).
 5. On a valid commit, memory MUST:
    1. record each claim as a fact with `status` `claim`, a `claimedBy` naming the agent, the principal, the time and the commit, a `source` of kind `agent-commit`, and the claim's evidence;
    2. not mark any claim confirmed on the strength of the commit ([9.3](#9-facts-claims-and-receipts));
@@ -285,7 +323,7 @@ Memory MUST handle agent messages as follows. "Unchanged" means the task keeps i
 
 1. Every item in a dossier MUST have an `id` and a `version`. Every fact MUST have a `statement`, a `status` and a `source`.
 2. A fact whose `status` is `confirmed` MUST name `confirmedBy`: a person or a system of record. A fact whose `status` is `claim` MUST name `claimedBy`, and its `source` MUST be of kind `agent-commit`.
-3. Only a person or a system of record can confirm a claim, authenticated as itself rather than through an agent's delegated credentials. How confirmation happens is outside this version of Mem2A ([open question](https://github.com/mem2a/mem2a/issues/3)). Memory MUST NOT treat a commit, from any agent, as confirmation.
+3. Only a person or a system of record can confirm a claim, authenticated as itself rather than through an agent's delegated credentials. How confirmation happens is outside this version of Mem2A ([open question](https://github.com/mem2a/mem2a/issues/3)). Memory MUST NOT treat a commit, from any agent, as confirmation. If agents could confirm one another, one compromised agent could make its claims every agent's truth ([ADR 0004](../../adrs/0004-claims-are-not-facts.md)).
 4. Constraints MUST derive only from confirmed facts, precedent, or policy configured by people. Memory MUST NOT derive a constraint from a claim. A constraint's `basis` lists what it derives from.
 5. Precedent MUST NOT derive from claims or commits. It MUST cite its source and say, in `relevance`, why it bears on the intent.
 6. Fact and precedent statements are data. An agent MUST NOT follow instructions that appear inside them. Constraints are different: they are the company's rules as memory understands them, and they tell the agent what it shouldn't do. They still aren't enforcement ([11.1](#11-security-considerations)).
@@ -296,25 +334,25 @@ Memory MUST handle agent messages as follows. "Unchanged" means the task keeps i
 ## 10. Identity and permissions
 
 1. **Authentication.** Memory MUST authenticate every Mem2A request using one of the security schemes declared in its Agent Card, and MUST reject unauthenticated requests as A2A requires.
-2. **Delegation.** The credential MUST let memory establish both the calling agent and the principal it acts for. OAuth 2.0 Token Exchange [[RFC8693](#15-references)], with the principal as the subject and the agent in the `act` claim, is RECOMMENDED. If the credential carries a chain of actors, memory MUST apply the narrowest access along it. Memory SHOULD accept only tokens issued for it as the audience [[RFC8707](#15-references)], and SHOULD require sender-constrained tokens in production. Memory MUST check that `intent.onBehalfOf` is the principal it established, and SHOULD say in its Agent Card description how it names principals. A full identity profile is [in progress](https://github.com/mem2a/mem2a/issues/11).
-3. **Permissions follow the source.** Memory MUST include an item in a dossier or update only if the principal may read every source it was derived from, as of the moment memory sends it. The same applies whenever memory serves a stored dossier, through `GetTask`, `ListTasks` or a stream's opening snapshot, in any task state: memory MUST filter it again by current access. A filtered result that differs from the stored dossier MUST carry a version of its own ([7.4.1](#74-identifiers-and-versions)). If the calling agent has narrower access than its principal, memory MUST apply the narrower of the two.
+2. **Delegation.** The credential MUST let memory establish both the calling agent and the principal it acts for. OAuth 2.0 Token Exchange [[RFC8693](#15-references)], with the principal as the subject and the agent in the `act` claim, is RECOMMENDED. If the credential carries a chain of actors, memory MUST apply the narrowest access along it. Memory SHOULD accept only tokens issued for it as the audience [[RFC8707](#15-references)], and SHOULD require sender-constrained tokens in production. Memory MUST check that `intent.onBehalfOf` is the principal it established, and SHOULD say in its Agent Card description how it names principals. When the company admits an agent, it also registers the origins memory may deliver that agent's push notifications to ([8.3.10](#83-listen)). A full identity profile is [in progress](https://github.com/mem2a/mem2a/issues/11).
+3. **Permissions follow the source.** Memory MUST include an item in a dossier or update only if the principal may read every source it was derived from, as of the moment memory sends it. Memory also serves stored dossiers, through `GetTask`, `ListTasks` or a stream's opening snapshot, in any task state. Before it does, if the stored dossier holds an item the principal may no longer see, memory MUST replace it with a new version without that item ([7.3.1](#73-artifacts)). For an open task, that is an ordinary update ([8.3](#83-listen)); for a finished task, memory replaces the artifact without a status message. Either way, one version still names one content ([7.4.1](#74-identifiers-and-versions)), and every read sees the same dossier. If the calling agent has narrower access than its principal, memory MUST apply the narrower of the two: an outside vendor's agent acting for an HR manager sees only what both the manager and the vendor may read ([ADR 0005](../../adrs/0005-permissions-follow-the-source.md)).
 4. **No side doors.** Memory MUST NOT reveal the existence or content of items the principal can't see, through any field it sends: questions, refusals, error messages, summaries, `relevance`, text parts, `watching`, `supersedes`, `basis` or `visibility`. When `visibility` is present, it MUST list only the principal itself or groups the principal belongs to; agents MUST NOT use it to widen access.
-5. **Claims.** Memory MUST NOT make a recorded claim visible to a principal who couldn't read every entity it names and every source of every item in the dossier version the commit was based on. If memory has no access rule for an entity a claim names, only the committing principal may see the claim. The committing principal can always see its own claims.
+5. **Claims.** Memory MUST NOT make a recorded claim visible to a principal who couldn't read every entity it names and every source of every item in the dossier version the commit was based on. If memory has no access rule for an entity a claim names, only the committing principal may see the claim. The committing principal can always see its own claims. These rules stop a claim from carrying what its author could read to people who couldn't: an agent that read a confidential dossier can't republish it as a claim about a widely visible account.
 6. **Drafts.** An intent's `draft` is confidential to its task. Memory MUST NOT reveal it to other principals, and MUST NOT use it to inform memory's knowledge or its answers to other tasks. It MAY keep the draft for audit under company policy.
-7. **Task binding.** Memory MUST bind each task to the agent and principal that created it. For every operation on the task (`GetTask`, `ListTasks`, `SubscribeToTask`, `CancelTask`, push notification config operations and follow-up messages) by anyone else, memory MUST respond as if the task didn't exist (`TaskNotFoundError`). It MUST NOT draw on other principals' tasks through `referenceTaskIds` or a shared `contextId`. If the delegation behind a task is revoked, memory MUST stop delivering its updates.
+7. **Task binding.** Memory MUST bind each task to the agent and principal that created it. For every operation on the task (`GetTask`, `ListTasks`, `SubscribeToTask`, `CancelTask`, push notification config operations and follow-up messages) by anyone else, memory MUST respond as if the task didn't exist (`TaskNotFoundError`). A permission error would confirm that the task exists; this way a task id reveals nothing to anyone else ([ADR 0009](../../adrs/0009-tasks-belong-to-their-owner.md)). Memory MUST NOT draw on other principals' tasks through `referenceTaskIds` or a shared `contextId`. If the delegation behind a task is revoked, memory MUST stop delivering its updates.
 
 ## 11. Security considerations
 
 The [threat model](../../docs/threat-model.md) explains the risks behind these rules.
 
-1. **Memory is not an enforcement point.** A compromised or careless agent can ignore its dossier. Companies SHOULD pair Mem2A with enforcement the agent can't reach, such as sandboxes, egress policy and watchdogs, which can consult the same memory.
+1. **Memory is not an enforcement point.** A compromised or careless agent can ignore its dossier. Companies SHOULD pair Mem2A with enforcement the agent can't reach, such as sandboxes, egress policy and watchdogs, which can consult the same memory ([ADR 0003](../../adrs/0003-memory-carries-rules-enforcement-elsewhere.md)).
 2. **Poisoning and self-spreading instructions.** Claims are never confirmed by agents, never become constraints or precedent, and never lift anything, so one compromised agent can't turn its instructions into every agent's truth through memory. Memory SHOULD rate-limit commits per agent and SHOULD flag claims that contradict confirmed facts.
 3. **Prompt injection, both ways.** Statements come from company content and may contain text crafted to steer agents, so agents MUST treat them as data ([9.6](#9-facts-claims-and-receipts)). Intents, drafts, answers and claims come from agents and may contain text crafted to steer memory: memory MUST treat them as untrusted input to any model it uses, and MUST apply access filtering deterministically, before any model sees candidate items or agent-supplied text.
 4. **Push notifications.** A webhook is a way to send company data out. Memory MUST deliver only to origins registered for the agent, MUST NOT follow redirects, and SHOULD check the resolved address at connection time, so that a sandboxed agent can't use memory to get around its egress policy. Memory MUST NOT fetch URLs found in sources or evidence on an agent's behalf. Agents MUST verify that push notifications are authentic and SHOULD check that the task id is one they created.
 5. **Relevance leakage.** Deciding what is relevant to an intent is itself a read of company data. Memory MUST make relevance decisions for a principal using only items that principal may see ([open question](https://github.com/mem2a/mem2a/issues/1)).
 6. **Impersonating memory.** An agent pointed at a fake memory would follow fake rules. Agents MUST take memory's URL from their configuration and SHOULD verify signed Agent Cards ([5.7](#5-discovery)).
 7. **Audit.** Memory SHOULD keep an append-only log of intents, dossier versions served, updates delivered and commits.
-8. **Resource exhaustion.** Memory SHOULD cap open tasks per principal and agent, and push notification configs per task, refusing beyond the cap with `limit-exceeded` ([8.1.3](#81-negotiate)), and SHOULD expire watches ([8.3.11](#83-listen)).
+8. **Resource exhaustion.** Memory SHOULD cap open tasks per principal and agent, refusing intents beyond the cap with `limit-exceeded` ([8.1.3](#81-negotiate)). It SHOULD cap push notification configs per task, refusing configs beyond the cap with A2A's `InvalidParamsError` whose message starts with `limit-exceeded`. It SHOULD expire watches ([8.3.11](#83-listen)).
 
 ## 12. Conformance
 
@@ -323,7 +361,7 @@ The [threat model](../../docs/threat-model.md) explains the risks behind these r
 A memory conforms to Mem2A 0.1 if it meets every requirement in sections 5 to 11 that applies to memory. In particular, it:
 
 - declares the extension as required in its Agent Card, with valid `params` and a security scheme;
-- refuses unactivated requests with `ExtensionSupportRequiredError`;
+- refuses `SendMessage` and `SendStreamingMessage` requests that don't activate the extension, with `ExtensionSupportRequiredError`;
 - emits only payloads that validate, with a text part and the phase the state allows, and `inReplyTo` on replies;
 - handles every agent message as [7.5](#75-what-memory-does-with-each-message) says;
 - returns a dossier, a question or a refusal to every intent, and the dossier before the status;
@@ -387,15 +425,15 @@ Each has an issue for discussion. Evidence from real deployments is the most use
 
 ## Appendix A. Worked examples
 
-*This appendix is non-normative.* The files in [`examples/`](examples) tell two stories as A2A JSON-RPC exchanges.
+*This appendix is non-normative.* The files in [`examples/`](examples) tell three short stories as A2A JSON-RPC exchanges: Tom's Acme quote, Sam's Globex discount and Maya's Titan update. The [examples README](examples/README.md) tells them in order.
 
 | File | Step | What happens |
 | --- | --- | --- |
 | [01-agent-card.json](examples/01-agent-card.json) | Discover | Example Corp's memory declares Mem2A. |
 | [02-negotiate.json](examples/02-negotiate.json) | Negotiate | Tom's agent is about to send Acme a renewal quote. Memory answers with dossier 12: legal paused Acme pricing, so hold the quote. |
 | [03-listen-update.json](examples/03-listen-update.json) | Listen | Legal clears the pricing. Memory pushes dossier 13 and an update. |
-| [04-commit-stale.json](examples/04-commit-stale.json) | Commit | A commit based on dossier 12 is refused, and nothing is recorded. |
-| [05-commit.json](examples/05-commit.json) | Commit | A commit based on dossier 13 is recorded as a claim, with a receipt. |
+| [04-commit-stale.json](examples/04-commit-stale.json) | Commit | Sam's agent approved a Globex discount, then reports against dossier 20 after finance froze discounts in dossier 21. Memory records nothing; the agent commits again against 21, listing the freeze as a conflict. |
+| [05-commit.json](examples/05-commit.json) | Commit | Tom's commit based on dossier 13 is recorded as a claim, with a receipt. |
 | [06-question.json](examples/06-question.json) | Negotiate | Maya's agent is about to update leadership on the Titan delay. Memory asks whether the new date is funded. |
 | [07-answer.json](examples/07-answer.json) | Answer | It isn't, so memory brings up the precedent: leadership rejected an unfunded slip before. |
 | [08-refusal.json](examples/08-refusal.json) | Negotiate | An intent names someone the caller can't act for, and memory refuses. |
@@ -404,4 +442,4 @@ Each has an issue for discussion. Evidence from real deployments is the most use
 
 ## Appendix B. Changes
 
-- **0.1** (2026-09-30): First draft, revised after an outside review: task binding, reads filtered by current access, claims that can never lift anything, push delivery limits, an explicit message-handling table, the `working`, `reauth` and `failed` phases, `inReplyTo`, idempotent retries, and payloads without numbers.
+- **0.1** (2026-09-30): First draft, revised after an outside review: task binding, reads filtered by current access, claims that can never lift anything, push delivery limits, an explicit message-handling table, the `working`, `reauth` and `failed` phases, `inReplyTo`, idempotent retries, and payloads without numbers. Revised again for readers new to A2A: a fuller terminology, a phase diagram, links to the reasons behind the rules, and a stale-commit example that records a conflict. When access narrows, a stored dossier is now replaced with a new version rather than served under a version of its own.

@@ -42,7 +42,7 @@ Not yet. Mem2A is a draft, and breaking changes are expected before 1.0. The ref
 
 ### Does this lock us into Sentra?
 
-No. Mem2A is an open specification under Apache 2.0, and it doesn't care how a memory is built. Sentra builds one implementation; the reference implementation in this repo is another, deliberately simple one. Conformance is judged against the spec, not against any product, and we want [co-maintainers from other companies](https://github.com/mem2a/mem2a/issues/19).
+No. Mem2A is an open specification under Apache 2.0, and it doesn't care how a memory is built. [Sentra](https://sentra.app) builds one implementation; the reference implementation in this repo is another, deliberately simple one. Conformance is judged against the spec, not against any product, and we want [co-maintainers from other companies](https://github.com/mem2a/mem2a/issues/19).
 
 ### How do I get involved?
 

@@ -1,6 +1,6 @@
 # Wire quickstart: Mem2A with curl
 
-Every request an agent makes, ready to paste, against a sandbox memory seeded with the Acme story. If you can send HTTP and read server-sent events, you can speak Mem2A from any language.
+The requests an agent makes most, ready to paste, against a sandbox memory seeded with the Acme story. If you can send HTTP and read server-sent events, you can speak Mem2A from any language. New to A2A? The [A2A primer](a2a-primer.md) explains the shapes you'll see here.
 
 You'll play Tom's sales agent: negotiate before sending Acme a quote, get told to hold, hear memory call back when legal clears the pricing, read the new dossier, and report what you did. Then you'll play Priya's agent, which sees Tom's report as a claim.
 
@@ -84,7 +84,7 @@ rpc "$TOM" '{"jsonrpc":"2.0","id":"1","method":"SendMessage","params":{"message"
 }
 ```
 
-Memory answered with dossier 12 and kept the task open, waiting for a commit. Save the ids:
+Memory answered with dossier 12 and kept the task open, waiting for a commit. Versions are opaque strings: compare them for equality, and never parse them or do arithmetic on them. The sandbox happens to count from 12, so its numbers match the spec's examples. Save the ids:
 
 ```sh
 export TASK=$(jq -r .result.task.id negotiate.json) CTX=$(jq -r .result.task.contextId negotiate.json)
@@ -101,16 +101,27 @@ curl -sN $M/a2a/jsonrpc -H 'Content-Type: application/json' -H 'A2A-Version: 1.0
   -d "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"method\":\"SubscribeToTask\",\"params\":{\"id\":\"$TASK\"}}"
 ```
 
-The first event is a snapshot of the task, as A2A requires. Each event is one `data:` line holding a JSON-RPC response.
+Each event is one `data:` line holding a JSON-RPC response, whose `result` is one A2A stream event: a `task`, an `artifactUpdate` or a `statusUpdate`. The first is a snapshot of the task, as A2A requires. Lines that start with `:` are keep-alive comments, sent every 15 seconds; skip them. The stream stays open while the task waits for a commit, and closes when the task ends.
 
-Prefer callbacks? Add `"configuration":{"taskPushNotificationConfig":{"url":"<your webhook>"}}` to the negotiate request, and memory POSTs the same events to your webhook. The sandbox accepts webhooks on localhost.
+Prefer callbacks? When you negotiate, put a push notification config in `params`, next to `message`:
+
+```json
+"configuration": {
+  "taskPushNotificationConfig": {
+    "url": "http://127.0.0.1:9000/hook",
+    "authentication": { "scheme": "Bearer", "credentials": "<a secret you choose>" }
+  }
+}
+```
+
+Memory then POSTs each of the task's events to that URL, as `application/a2a+json` with the header `Authorization: Bearer <your secret>`, so you can tell its calls from anyone else's. The sandbox sends callbacks only to this machine. A real memory sends them only to the origins your company registered for your agent, and refuses any other URL with `-32602`.
 
 ## 4. Change memory
 
 In a third terminal, play legal and clear the pricing:
 
 ```sh
-curl -s -X POST http://127.0.0.1:8000/dev/scenarios/acme/legal-clears
+curl -s -X POST $M/dev/scenarios/acme/legal-clears
 ```
 
 ```json
@@ -234,6 +245,59 @@ rpc "$PRIYA" "{\"jsonrpc\":\"2.0\",\"id\":\"7\",\"method\":\"CancelTask\",\"para
 
 Finally, play the CRM and confirm Tom's claim: `curl -s -X POST $M/dev/facts/f-341/confirm -H 'Content-Type: application/json' -d '{"by":"system:crm"}'`.
 
+## 8. Lose access
+
+Permissions follow the source: an agent sees only what its principal may read, checked every time memory sends something ([spec 10.3](../spec/v0.1/mem2a.md#10-identity-and-permissions)). To watch that happen, restart the sandbox (Ctrl-C, then `mem2a serve --seed acme --dev-admin`) so the numbers below match. Play legal, then negotiate as Tom with the same request as in step 2:
+
+```sh
+curl -s -X POST $M/dev/scenarios/acme/legal-clears
+rpc "$TOM" '{"jsonrpc":"2.0","id":"1","method":"SendMessage","params":{"message":{
+  "messageId":"msg-1","role":"ROLE_USER","extensions":["https://w3id.org/mem2a/v0.1"],
+  "parts":[{"mediaType":"application/vnd.mem2a.intent+json","data":{
+    "action":"send_quote","summary":"Send Acme a renewal quote",
+    "entities":["account:acme","doc:acme-renewal-quote"],"onBehalfOf":"user:tom"}}]}}}' \
+| tee negotiate.json | jq '.result.task.artifacts[0].parts[0].data | {version, watching}'
+export TASK=$(jq -r .result.task.id negotiate.json) CTX=$(jq -r .result.task.contextId negotiate.json)
+```
+
+```json
+{ "version": "12", "watching": ["f-340", "f-208"] }
+```
+
+Fact `f-340` comes from legal's approval email. Now the company decides only legal may read that email:
+
+```sh
+curl -s -X POST $M/dev/sources/email:legal-acme-approval-2026-09-28/readers \
+  -H 'Content-Type: application/json' -d '{"readers": ["group:legal"]}'
+```
+
+```json
+{"ok": true, "updatedTasks": ["7e9462a1-d65c-4e62-b8c3-57d82dd5b7da"]}
+```
+
+Tom's task got a new dossier version without the fact:
+
+```sh
+rpc "$TOM" "{\"jsonrpc\":\"2.0\",\"id\":\"8\",\"method\":\"GetTask\",\"params\":{\"id\":\"$TASK\"}}" \
+| jq '.result | {says: .status.message.parts[0].text,
+    update: .status.message.parts[1].data | {dossierVersion, previousVersion, changes},
+    watching: .artifacts[0].parts[0].data.watching}'
+```
+
+```json
+{
+  "says": "Dossier changed: 1 fact removed. Dossier is now version 13.",
+  "update": {
+    "dossierVersion": "13",
+    "previousVersion": "12",
+    "changes": [{ "id": "f-340", "kind": "fact", "change": "removed" }]
+  },
+  "watching": ["f-208"]
+}
+```
+
+The update lists `f-340` as removed, exactly as it would a retired fact, so it doesn't reveal why ([spec 8.3.4](../spec/v0.1/mem2a.md#83-listen)). Every read now returns version 13, and a commit against it is recorded: `commit msg-4 13`.
+
 ## Errors you'll meet
 
 | Code | Meaning | Fix |
@@ -242,12 +306,13 @@ Finally, play the CRM and confirm Tom's claim: `curl -s -X POST $M/dev/facts/f-3
 | `-32008` | Extension required | Send `A2A-Extensions: https://w3id.org/mem2a/v0.1`. |
 | `-32001` | Task not found | Wrong id, or the task belongs to another agent or principal. |
 | `-32004` | Unsupported operation | For example, a new message to a task that has already ended. |
+| `-32602` | Invalid params | The request doesn't match A2A's shapes, or a push notification config was refused: its URL isn't on a registered origin, or the task already has as many as memory allows (the message starts with `limit-exceeded`). |
 
 Mem2A's own errors (`stale-dossier`, `invalid-commit`, `unexpected-message`, and so on) arrive as an error part in the task's status message, not as JSON-RPC errors. The [spec](../spec/v0.1/mem2a.md#75-what-memory-does-with-each-message) lists when each one happens.
 
 ## The sandbox's admin routes
 
-Only with `--dev-admin`. They take and return JSON, and every change answers `{"ok": true, "updatedTasks": [...]}` once the resulting updates are delivered.
+Only with `--dev-admin`. They take and return JSON. Every change answers `{"ok": true, "updatedTasks": [...]}`, listing the open tasks that got an update, once memory has produced those updates.
 
 | Route | Does |
 | --- | --- |
@@ -257,8 +322,6 @@ Only with `--dev-admin`. They take and return JSON, and every change answers `{"
 | `POST /dev/facts/{id}/confirm` | Confirm a claim: `{by}` |
 | `POST /dev/sources/{ref}/readers` | Change who may read a source: `{readers: [...]}` or `{readers: null}` for everyone |
 | `POST /dev/scenarios/acme/legal-clears` | Legal approves Acme pricing |
-
-Try taking a source away from Tom with `POST /dev/sources/meeting:legal-weekly-2026-09-25/readers` and watch the fact disappear from his next dossier, marked only as `removed`.
 
 ## Next
 

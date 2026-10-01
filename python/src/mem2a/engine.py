@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""The memory itself: a transport-agnostic, in-memory Mem2A engine.
+"""The memory: decides what an agent may see and needs to know before it acts,
+watches that for changes while the agent works, and records what agents
+report doing. It knows nothing about A2A; `mem2a.server` serves it.
 
-The engine knows nothing about A2A. The server (`mem2a.server`) calls
-`MemoryEngine.negotiate`, `respond`, `refresh`, `cancel`, `expire` and `fail`,
-and turns each returned `Reply` into A2A artifacts and one status message.
+The server calls `MemoryEngine.negotiate`, `respond`, `refresh`, `refilter`,
+`cancel`, `expire` and `fail`, and turns what they return into A2A artifacts
+and one status message. Everything is in process memory.
 
 How this reference memory decides what goes into a dossier:
 
@@ -36,13 +38,19 @@ which ``awaiting-commit`` tasks may be affected. The server then calls
 `refresh` for each at delivery time, which recomputes the dossier with
 current permissions and returns an update only if the content changed.
 
+Access (spec 10.3): memory uses the principal's access as of each request.
+A request for a task from its own agent and principal with other groups
+than the ones stored replaces them (`use_access`); the server then
+re-evaluates the task. So does a change of who may read a source. An open
+task gets a new version and an update (`refresh`); a finished one gets a
+new stored dossier, with no event (`refilter`).
+
 Versions are opaque strings. Dossier versions come from one memory-wide
 counter. The engine is not thread-safe: use it from one event loop.
 """
 
 from __future__ import annotations
 
-import hashlib
 import itertools
 import logging
 import re
@@ -62,7 +70,9 @@ logger = logging.getLogger(__name__)
 
 #: The Mem2A parts of one incoming agent message, as (mediaType, data) pairs.
 Payloads = Sequence[tuple[str, Any]]
-#: Called with the ids of open tasks whose dossier may have changed.
+#: Called with the ids of tasks to re-evaluate: open tasks whose dossier may
+#: have changed and, after an access change, finished tasks whose stored
+#: dossier may show something else (see `MemoryEngine.refilter`).
 ChangeListener = Callable[[list[str]], None]
 #: Writes the dossier's one-line brief from what the principal may see.
 Summarizer = Callable[
@@ -259,8 +269,10 @@ class QuestionRule:
     #: Text part for people; defaults to the question text.
     prompt: str | None = None
 
-    def model(self) -> models.Question:
-        return models.Question(id=self.id, text=self.text, options=list(self.options) or None)
+    def model(self, expires_at: datetime | None = None) -> models.Question:
+        return models.Question(
+            id=self.id, text=self.text, options=list(self.options) or None, expires_at=expires_at
+        )
 
 
 @dataclass
@@ -294,10 +306,13 @@ class TaskRecord:
 
     id: str
     context_id: str
+    #: The agent and principal that opened the task, with the groups of the
+    #: latest request for it (spec 10.3).
     identity: Identity
     created_at: datetime
     phase: Phase = 'working'
     intent: models.Intent | None = None
+    #: When the open question, or the watch, ends (spec 8.2.4, 8.3.11).
     expires_at: datetime | None = None
     #: The open question while the task is in phase ``question``.
     question: QuestionRule | None = None
@@ -307,6 +322,8 @@ class TaskRecord:
     dossier: models.Dossier | None = None
     #: Every dossier this task was given, by version.
     dossiers: dict[str, models.Dossier] = field(default_factory=dict)
+    #: The dossier the task had when it finished; `refilter` starts from it.
+    final_dossier: models.Dossier | None = None
 
     @property
     def open(self) -> bool:
@@ -437,7 +454,12 @@ class MemoryEngine:
         return record
 
     def set_source_readers(self, ref: str, readers: Iterable[str] | None) -> list[str]:
-        """Change who may read a source. Returns the tasks re-checked."""
+        """Change who may read a source.
+
+        Returns the tasks to re-evaluate: open tasks whose dossier may change
+        (they get an update), and finished tasks whose stored dossier shows
+        an item from the source (they get a new stored dossier, spec 10.3).
+        """
         self._sources[ref].readers = _readers(readers)
         direct = {item.id for item in self._items() if ref in item.sources}
         return self._access_changed(direct | self._claims_resting_on(direct))
@@ -446,7 +468,7 @@ class MemoryEngine:
         """Who, besides the claimant, may see claims naming `entity`.
 
         None: nobody else. Applies to existing claims too. Returns the tasks
-        re-checked.
+        to re-evaluate, as `set_source_readers` does.
         """
         if readers is None:
             self._entity_readers.pop(entity, None)
@@ -643,13 +665,28 @@ class MemoryEngine:
         until: str | None = None,
         version: int = 1,
     ) -> PolicyRecord:
-        """Configure a constraint. Give exactly one of `basis` or `policy`.
+        """Configure a policy: a rule people set. Memory turns it into the
+        constraint with the same id, in every dossier the policy applies to.
+
+        The policy is configuration that only people write; the constraint is
+        what agents see. It carries the policy's statement, level and version,
+        and lists in ``basis`` what makes it apply. Claims never produce or
+        lift one (spec 9.4, 9.8). In the acme seed, constraint ``c-17`` comes
+        from such a policy: hold Acme pricing while legal's pause (fact
+        ``f-311``) stands. Dossiers carry ``c-17`` while ``f-311`` is in them,
+        and drop it once ``f-340`` supersedes ``f-311``.
+
+        Give exactly one of `basis` or `policy`:
 
         * `basis`: fact or precedent ids. The constraint applies while all of
           them are confirmed facts or precedent in the dossier.
         * `policy`: a standing policy reference, such as
-          ``policy:leadership-update-format``, that applies whenever the
-          `actions` and `entities` filters match the intent.
+          ``policy:leadership-update-format``, which becomes the basis. The
+          constraint applies to every matching intent.
+
+        `actions` and `entities` limit either kind to matching intents.
+        `update_policy` bumps the constraint's version; `retire_policy` ends
+        it.
         """
         record = PolicyRecord(
             id=constraint_id,
@@ -771,6 +808,10 @@ class MemoryEngine:
     def open_tasks(self) -> list[TaskRecord]:
         return [t for t in self._tasks.values() if t.open]
 
+    def tasks(self) -> list[TaskRecord]:
+        """Every task, open or finished."""
+        return list(self._tasks.values())
+
     # ========================================================= the protocol
     def negotiate(
         self, task_id: str, context_id: str, identity: Identity, payloads: Payloads
@@ -826,8 +867,6 @@ class MemoryEngine:
                 return self._refuse(task, 'refused', rule.message, f'Refused: {rule.message}')
 
         task.intent = intent
-        if self.watch_timeout is not None:
-            task.expires_at = now + self.watch_timeout  # questions expire too
         return self._advance(task)
 
     def respond(self, task_id: str, identity: Identity, payloads: Payloads) -> Reply:
@@ -865,12 +904,51 @@ class MemoryEngine:
             update=update,
         )
 
+    def refilter(self, task_id: str) -> models.Dossier | None:
+        """Re-evaluate a finished task's dossier against current access (spec 10.3).
+
+        Starts from the dossier the task finished with, and drops what its
+        principal can no longer see, then what rested on that: precedent
+        cited because of a dropped fact, constraints whose basis was dropped.
+        Returns the result as a new version (and makes it the task's dossier)
+        if it differs from the current one; else None. Adds nothing new: a
+        finished task is no longer watched.
+        """
+        task = self._tasks.get(task_id)
+        if task is None or task.open or task.final_dossier is None or task.dossier is None:
+            return None
+        items = self._still_visible(task, task.final_dossier)
+        current = task.dossier
+        if _signature(*items) == _signature(current.facts, current.precedent, current.constraints):
+            return None
+        return self._new_dossier(task, *items)
+
+    def use_access(self, task_id: str, identity: Identity) -> bool:
+        """A request for the task, from its own agent and principal (spec 10.3).
+
+        Memory uses the access each request carries. If the request's groups
+        differ from the ones stored for the task, they replace them and this
+        returns True: then re-evaluate the task, with `refresh` while it is
+        open (a new version and an update, as in spec 8.3.2) or `refilter`
+        once it has finished. Returns False for anyone else's request.
+        """
+        task = self._tasks.get(task_id)
+        if task is None or (task.identity.agent, task.identity.principal) != (
+            identity.agent,
+            identity.principal,
+        ):
+            return False
+        if task.identity.groups == identity.groups:
+            return False
+        task.identity = identity
+        return True
+
     def cancel(self, task_id: str) -> Reply | None:
         """The agent canceled the task: stop watching, record nothing."""
         task = self._tasks.get(task_id)
         if task is None or not task.open:
             return None
-        task.phase = 'canceled'
+        self._end(task, 'canceled')
         return Reply(
             phase='canceled',
             text='Canceled. Memory stopped watching this task and recorded nothing from it.',
@@ -886,7 +964,7 @@ class MemoryEngine:
         task = self._tasks.get(task_id)
         if task is None or not _overdue(task, self.clock()):
             return None
-        task.phase = 'expired'
+        self._end(task, 'expired')
         return Reply(
             phase='expired',
             text='Expired: no commit arrived in time, so memory stopped watching.',
@@ -904,87 +982,30 @@ class MemoryEngine:
         """
         task = self._tasks.get(task_id)
         if task is not None:
-            task.phase = 'failed'
+            self._end(task, 'failed')
         return Reply(
             phase='failed',
             text='Memory hit an internal error, so this task failed. Negotiate again.',
             error=models.Error(code='internal', message='Internal error.'),
         )
 
-    def visible_dossier(
-        self, task_id: str, dossier: models.Dossier, viewer: Identity | None = None
-    ) -> models.Dossier:
-        """A stored dossier as the task's principal may see it now.
-
-        For reads (GetTask, ListTasks, stream snapshots) in any task state:
-        drops items the task's principal, or `viewer` (the caller now), can no
-        longer see, then what rested on them (precedent cited because of a
-        dropped fact, constraints whose basis was dropped), and rewrites
-        ``watching`` and the summary to match. Returns `dossier` itself if
-        nothing was dropped. Otherwise the result gets its own version,
-        ``<version>-redacted-<hash>``, derived from what is left, so that a
-        version always names one content (spec 10.3).
-        """
-        task = self._tasks.get(task_id)
-        if task is None or task.intent is None:
-            return dossier
-        viewers = [task.identity] if viewer in (None, task.identity) else [task.identity, viewer]
-        caches: list[dict[str, bool]] = [{} for _ in viewers]
-
-        def sees(item_id: str) -> bool:
-            return all(self._sees(v, item_id, c) for v, c in zip(viewers, caches, strict=True))
-
-        def still_relevant(item_id: str) -> bool:
-            record = self._precedent.get(item_id)
-            return record is not None and any(_relevant(w, task, confirmed) for w in record.when)
-
-        facts = [f for f in dossier.facts if sees(f.id)]
-        confirmed = {f.id for f in facts if f.status == 'confirmed'}
-        precedent = [p for p in dossier.precedent if sees(p.id) and still_relevant(p.id)]
-        kept = {f.id for f in facts} | {p.id for p in precedent}
-        constraints = [
-            c
-            for c in dossier.constraints
-            if all(b in kept or not self._is_item(b) for b in c.basis)
-        ]
-        if (len(facts), len(precedent), len(constraints)) == (
-            len(dossier.facts),
-            len(dossier.precedent),
-            len(dossier.constraints),
-        ):
-            return dossier
-        kept_items = sorted(
-            [(f.id, f.version) for f in facts]
-            + [(p.id, p.version) for p in precedent]
-            + [(c.id, c.version) for c in constraints]
-        )
-        digest = hashlib.sha256(repr(kept_items).encode()).hexdigest()[:12]
-        return dossier.model_copy(
-            update={
-                'version': f'{dossier.version}-redacted-{digest}',
-                'facts': facts,
-                'precedent': precedent,
-                'constraints': constraints,
-                'watching': [
-                    *(f.id for f in facts),
-                    *(p.id for p in precedent),
-                    *(c.id for c in constraints),
-                ],
-                'summary': self.summarize(facts, precedent, constraints),
-            }
-        )
-
     # ------------------------------------------------------ protocol steps
     def _advance(self, task: TaskRecord) -> Reply:
         """Ask the next question, or deliver the first dossier."""
+        if self.watch_timeout is not None:
+            # Each question waits watchTimeout for its answer (spec 8.2.4), and
+            # the watch runs watchTimeout from the first dossier (spec 8.3.1,
+            # 8.3.11). Questions and dossiers carry expiresAt (spec 8.1.6).
+            task.expires_at = self.clock() + self.watch_timeout
         rule = self._next_question(task)
         if rule is not None:
             task.phase, task.question = 'question', rule
-            return Reply(phase='question', text=rule.prompt or rule.text, question=rule.model())
+            return Reply(
+                phase='question',
+                text=rule.prompt or rule.text,
+                question=rule.model(task.expires_at),
+            )
         task.phase, task.question = 'awaiting-commit', None
-        if self.watch_timeout is not None:
-            # Spec 8.3.9: the watch runs from the first dossier.
-            task.expires_at = self.clock() + self.watch_timeout
         dossier = self._new_dossier(task, *self._compose(task))
         return Reply(phase='awaiting-commit', text=dossier.summary, dossier=dossier)
 
@@ -1109,7 +1130,7 @@ class MemoryEngine:
         for conflict in commit.conflicts or ():
             review('conflict', conflict.id, conflict.explanation)
 
-        task.phase = 'committed'  # before notifying: this task stops watching
+        self._end(task, 'committed')  # before notifying: this task stops watching
         self._changed({r.fact_id for r in recorded}, entities, notes=notes)
 
         conflicts = list(dict.fromkeys(c.id for c in commit.conflicts or ()))
@@ -1130,8 +1151,13 @@ class MemoryEngine:
         )
         return Reply(phase='committed', text=text, receipt=receipt)
 
+    def _end(self, task: TaskRecord, phase: Phase) -> None:
+        """Finish the task: no more turns, and the watch ends (spec 8.3.11)."""
+        task.phase, task.question = phase, None
+        task.final_dossier = task.dossier
+
     def _refuse(self, task: TaskRecord, code: ErrorCode, message: str, text: str) -> Reply:
-        task.phase = 'refused'
+        self._end(task, 'refused')
         return Reply(
             phase='refused',
             text=_clip(text, 4096),
@@ -1144,7 +1170,7 @@ class MemoryEngine:
         return Reply(
             phase='question',
             text=_clip(f'Not accepted: {message}', 4096),
-            question=task.question.model(),
+            question=task.question.model(task.expires_at),
             error=models.Error(code=code, message=_clip(message, 2048)),
         )
 
@@ -1257,6 +1283,30 @@ class MemoryEngine:
             constraints,
         )
 
+    def _still_visible(
+        self, task: TaskRecord, dossier: models.Dossier
+    ) -> tuple[list[models.Fact], list[models.Precedent], list[models.Constraint]]:
+        """The items of `dossier` the task's principal may still see, minus
+        precedent no longer cited (its `When` named a dropped fact) and
+        constraints whose basis was dropped. Items keep their versions."""
+        seen: dict[str, bool] = {}
+        facts = [f for f in dossier.facts if self._sees(task.identity, f.id, seen)]
+        confirmed = {f.id for f in facts if f.status == 'confirmed'}
+        precedent = [
+            p
+            for p in dossier.precedent
+            if self._sees(task.identity, p.id, seen)
+            and (record := self._precedent.get(p.id)) is not None
+            and any(_relevant(w, task, confirmed) for w in record.when)
+        ]
+        kept = {f.id for f in facts} | {p.id for p in precedent}
+        constraints = [
+            c
+            for c in dossier.constraints
+            if all(b in kept or not self._is_item(b) for b in c.basis)
+        ]
+        return facts, precedent, constraints
+
     def _fact_model(self, f: FactRecord) -> models.Fact:
         claimed_by = None
         if f.status == 'claim' and f.origin is not None:
@@ -1350,7 +1400,7 @@ class MemoryEngine:
         for item_id in ids:
             self._notes.pop(item_id, None)  # never explain an access change
         entities = {e for item in self._items() if item.id in ids for e in item.entities}
-        return self._changed(ids, entities)
+        return self._changed(ids, entities, finished=True)
 
     # --------------------------------------------------------------- rules
     def _next_question(self, task: TaskRecord) -> QuestionRule | None:
@@ -1423,25 +1473,42 @@ class MemoryEngine:
         *,
         notes: Mapping[str, str | None] | None = None,
         everyone: bool = False,
+        finished: bool = False,
     ) -> list[str]:
-        """Record notes and tell listeners which open tasks may be affected."""
+        """Record notes and tell listeners which tasks may be affected.
+
+        That is, tasks awaiting a commit whose dossier watches one of `ids`
+        or shares one of `entities` (all of them, with `everyone`) and, with
+        `finished` (an access change), finished tasks whose final dossier
+        shows one of `ids`.
+        """
         for item_id, note in (notes or {}).items():
             if note:
                 self._notes[item_id] = note
             else:
                 self._notes.pop(item_id, None)
-        affected = [
-            t.id
-            for t in self._tasks.values()
-            if t.phase == 'awaiting-commit'
-            and t.dossier is not None
-            and t.intent is not None
-            and (
-                everyone
-                or not ids.isdisjoint(t.dossier.watching)
-                or not entities.isdisjoint(t.intent.entities)
+
+        def watching(t: TaskRecord) -> bool:
+            return (
+                t.phase == 'awaiting-commit'
+                and t.dossier is not None
+                and t.intent is not None
+                and (
+                    everyone
+                    or not ids.isdisjoint(t.dossier.watching)
+                    or not entities.isdisjoint(t.intent.entities)
+                )
             )
-        ]
+
+        def showing(t: TaskRecord) -> bool:
+            return (
+                finished
+                and not t.open
+                and t.final_dossier is not None
+                and not ids.isdisjoint(t.final_dossier.watching)
+            )
+
+        affected = [t.id for t in self._tasks.values() if watching(t) or showing(t)]
         if affected:
             for listener in list(self._listeners):
                 try:

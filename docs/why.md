@@ -38,7 +38,7 @@ Every agent you add makes this worse. Agents that stay in sync by messaging each
 
 ## One shared memory, one protocol
 
-We think there is one way to avoid these failures at enterprise scale: a shared, company-owned memory that every agent consults before it acts, reports to after it acts, and that speaks first when something changes. That memory learns from how the company actually works: it retires stale facts, keeps a receipt for every fact, and catches conflicts before two agents act on them.
+We think there is one way to avoid these failures at enterprise scale: a shared, company-owned memory that every agent consults before it acts, reports to after it acts, and that speaks first when something changes. That memory learns from how the company actually works: it retires stale facts, keeps track of where every fact came from, and catches conflicts before two agents act on them.
 
 For one memory to serve agents from every vendor, it needs one standard way to talk to them. That's Mem2A. It's built on A2A because A2A already treats the other side as an agent rather than a tool: it can take its time, ask a question back, say no and call back later. That's exactly how memory needs to behave.
 
@@ -48,4 +48,4 @@ For one memory to serve agents from every vendor, it needs one standard way to t
 
 ## The human version works
 
-At [Lenskart](https://nanothoughts.substack.com/p/making-people-more-productive-doesnt), a $12B public company, the team at Sentra compiled the company's own records into one shared memory. Across its ten major departments, the follow-ups it took to get stuck work moving fell 58% in four weeks, with no change in individual productivity. Agents will hit the same wall as people, only faster. Mem2A is how we hope to get ahead of it, together.
+At [Lenskart](https://nanothoughts.substack.com/p/making-people-more-productive-doesnt), a $12B public company, the team at [Sentra](https://sentra.app) compiled the company's own records into one shared memory. Across its ten major departments, the follow-ups it took to get stuck work moving fell 58% in four weeks, with no change in individual productivity. Agents will hit the same wall as people, only faster. Mem2A is how we hope to get ahead of it, together.

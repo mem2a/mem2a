@@ -2,9 +2,10 @@
 """JSON Schema validation against the Mem2A v0.1 schemas shipped in this package.
 
 The schemas in ``mem2a/schemas`` are byte-identical copies of the normative
-schemas in the specification. Incoming payloads are validated before they are
-parsed into models; outgoing payloads are validated before they are sent (see
-`check_outgoing`).
+schemas in the specification. What memory receives is checked the way spec
+2.5 asks: members this version doesn't define are dropped (`known_members`),
+then the rest is validated. What memory sends must validate as is, unknown
+members included (see `check_outgoing`).
 """
 
 from __future__ import annotations
@@ -12,9 +13,11 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections.abc import Iterator
 from functools import cache
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import urljoin
 
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
@@ -99,7 +102,11 @@ def validate(kind: str, payload: Any) -> None:
 
 
 def check_outgoing(kind: str, payload: Any, mode: ValidationMode) -> None:
-    """Apply the outgoing-validation policy to a payload memory is about to send."""
+    """Apply the outgoing-validation policy to a payload memory is about to send.
+
+    Strict: a payload memory sends must validate as is, unknown members
+    included (spec 2.5 lets receivers ignore them; senders must not add them).
+    """
     if mode == 'off':
         return
     problems = errors(kind, payload)
@@ -108,3 +115,51 @@ def check_outgoing(kind: str, payload: Any, mode: ValidationMode) -> None:
     if mode == 'raise':
         raise SchemaValidationError(kind, problems)
     logger.error('Outgoing %s payload violates its schema: %s', kind, problems)
+
+
+def known_members(kind: str, payload: Any) -> Any:
+    """`payload` without the object members its schema doesn't define (spec 2.5).
+
+    A receiver ignores what a later version may add, then validates the rest.
+    Wherever the schema lists an object's ``properties`` and allows no others,
+    other members are dropped, in nested objects and arrays too. Free-form
+    objects (``metadata``) are kept whole. Returns a copy; `payload` is not
+    changed.
+    """
+    root = schema(kind)
+    return _strip(payload, root, root['$id'])
+
+
+def _strip(value: Any, node: Any, base: str) -> Any:
+    parts = list(_parts(node, base))
+    if isinstance(value, dict):
+        members: dict[str, tuple[Any, str]] = {}
+        closed = False
+        for part, part_base in parts:
+            closed = closed or part.get('additionalProperties') is False
+            for name, subschema in part.get('properties', {}).items():
+                members.setdefault(name, (subschema, part_base))
+        return {
+            name: _strip(member, *members[name]) if name in members else member
+            for name, member in value.items()
+            if name in members or not closed
+        }
+    if isinstance(value, list):
+        items = next(((p['items'], b) for p, b in parts if isinstance(p.get('items'), dict)), None)
+        return [_strip(item, *items) for item in value] if items else list(value)
+    return value
+
+
+def _parts(node: Any, base: str) -> Iterator[tuple[dict[str, Any], str]]:
+    """`node` and every schema it applies through ``$ref`` and ``allOf``, each
+    with the URI of the schema document it sits in, which its ``$ref`` is
+    relative to."""
+    if not isinstance(node, dict):
+        return
+    yield node, base
+    if isinstance(node.get('$ref'), str):
+        target = urljoin(base, node['$ref'])
+        resolved = _load()[0].resolver().lookup(target)
+        yield from _parts(resolved.contents, target.partition('#')[0])
+    for branch in node.get('allOf', ()):
+        yield from _parts(branch, base)

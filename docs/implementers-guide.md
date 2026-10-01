@@ -1,6 +1,8 @@
 # Implementer's guide: Mem2A on your memory
 
-For teams that have a memory, knowledge graph or context engine and want any vendor's agents to use it through Mem2A. It walks through what to build, in any language, in the order you'll need it, with the [spec](../spec/v0.1/mem2a.md) sections that govern each step. The [Python reference implementation](../python) does all of it in about 4,000 lines, and is there to read.
+For teams that have a memory, knowledge graph or context engine and want any vendor's agents to use it through Mem2A. It walks through what to build, in any language, in the order you'll need it, with the [spec](../spec/v0.1/mem2a.md) sections that govern each step. The [Python reference implementation](../python) does all of it in about 6,000 lines, and is there to read: its [architecture notes](../python/ARCHITECTURE.md) map each MUST in the spec to the code and the test that cover it.
+
+New to A2A? Read the [A2A primer](a2a-primer.md) first; it covers the A2A you need for this guide in about 15 minutes. The [glossary](glossary.md) defines every term.
 
 ## What you're building
 
@@ -59,8 +61,9 @@ Remember a task's processed `messageId`s, so a retry returns the task as it stan
 - **Send the update.** Replace the `dossier` artifact, then send an `INPUT_REQUIRED` status with an update part listing `added`, `updated` and `removed` items. Something the principal can no longer see is just `removed`.
 - **Deliver everywhere.** Send each update to every registered webhook and every open `SubscribeToTask` stream, and make sure `GetTask` reflects it.
 - **Webhooks:**
-  - deliver in order per webhook, in the background, with retries;
-  - deliver only to origins registered for the agent, without following redirects.
+  - let the company register each agent's webhook origins when it admits the agent, and refuse a push config on any other origin with `InvalidParamsError` ([8.3.10](../spec/v0.1/mem2a.md#83-listen));
+  - deliver only to those origins, without following redirects, checking where the host name resolves when you connect;
+  - deliver in order per webhook, in the background, with retries.
 - **Streams:** keep `SubscribeToTask` streams open through `INPUT_REQUIRED`.
 
 ### 7. Commits ([8.4](../spec/v0.1/mem2a.md#84-commit))
@@ -68,16 +71,16 @@ Remember a task's processed `messageId`s, so a retry returns the task as it stan
 - **Refuse stale commits.** If `basedOn` isn't the latest version you've produced, record nothing and answer `stale-dossier` with `currentVersion`.
 - **Record a valid commit:**
   - Each claim becomes a fact with status `claim`, `claimedBy` and source `agent-commit`.
-  - Its visibility is the committing principal, plus those who can read every entity it names and every source behind the dossier it was based on.
+  - Who may see it: the committing principal, plus principals who can read every entity it names and every source of every item in the dossier the commit was based on ([10.5](../spec/v0.1/mem2a.md#10-identity-and-permissions)).
   - Record the conflicts for a person to review.
   - A claim never supersedes, retires or lifts anything.
 - **Close the loop.** Re-evaluate other open tasks the claims affect, then emit the `receipt` artifact and complete the task.
 
 ### 8. Reads, failures and limits
 
-- **Reads:** filter stored dossiers again by current access whenever you serve them, in any task state. A filtered result that differs gets its own version ([10.3](../spec/v0.1/mem2a.md#10-identity-and-permissions)).
+- **Reads:** before you serve a stored dossier (`GetTask`, `ListTasks`, a stream's first event), in any task state, check it against the caller's current access. If it holds an item they may no longer see, replace it with a new version first: an ordinary update for an open task, a quiet artifact replacement for a finished one. Then every read, and every commit, sees the same version ([10.3](../spec/v0.1/mem2a.md#10-identity-and-permissions)).
 - **Failures:** on an internal failure, fail the task with phase `failed` and error `internal`, without exception text ([8.6](../spec/v0.1/mem2a.md#86-failure)).
-- **Limits:** cap open tasks per principal and agent, and push configs per task, answering `limit-exceeded` ([11.8](../spec/v0.1/mem2a.md#11-security-considerations)).
+- **Limits:** cap open tasks per principal and agent, refusing further intents with `limit-exceeded`. Cap push configs per task, refusing further configs with `InvalidParamsError` whose message starts with `limit-exceeded` ([11.8](../spec/v0.1/mem2a.md#11-security-considerations)).
 
 ## Pitfalls in A2A SDKs
 
@@ -112,7 +115,7 @@ Mem2A asks for some things A2A SDKs don't make easy. These are what we hit, or w
     --entity account:acme --action send_quote --other-token "$TOKEN_FOR_SOMEONE_ELSE"
   ```
 
-  It checks your card, activation, refusals, negotiation, dossier rules, stale and invalid commits, unexpected messages, task binding, reads and cancel. `--allow-writes` adds a real commit and a retry; run it only against a test memory. The Listen check needs a way to change your memory from the outside: today it understands the reference server's `/dev` routes, and a portable contract is [wanted](https://github.com/mem2a/mem2a/issues/15).
+  It checks your card, activation, refusals, negotiation, dossier rules, stale and invalid commits, unexpected messages, task binding, reads, cancel and payloads. `--allow-writes` adds a real commit and a retry; run it only against a test memory. `--dev-admin` adds the listen and access checks, which need a way to change your memory from the outside: today they use the reference server's `/dev` routes, and a portable contract is [wanted](https://github.com/mem2a/mem2a/issues/15). Each line of its report names the spec section it checks.
 
 ## Get listed, and report problems
 

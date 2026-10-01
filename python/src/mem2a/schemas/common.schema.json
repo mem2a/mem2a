@@ -51,7 +51,7 @@
       "type": "object"
     },
     "Source": {
-      "description": "Where a fact, precedent or constraint came from: its receipt.",
+      "description": "Where a fact or precedent came from, such as a meeting, an email or a CRM record, so a person can trace it.",
       "type": "object",
       "required": ["ref", "kind"],
       "additionalProperties": false,

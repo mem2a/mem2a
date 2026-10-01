@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Serve a `MemoryEngine` as an A2A v1.0 JSON-RPC agent that speaks Mem2A v0.1.
+"""Serves a `MemoryEngine` as an A2A v1.0 JSON-RPC agent that speaks Mem2A
+v0.1: A2A requests become engine calls, and what the engine replies or
+changes becomes A2A events, stored, streamed and pushed by the SDK.
 
-Built on a2a-sdk 1.2.x:
+Built on a2a-sdk 1.2.x (see python/ARCHITECTURE.md for the whole picture):
 
 * `Mem2AExecutor` (an ``AgentExecutor``) turns engine `Reply` objects into A2A
   events: the dossier or receipt artifact first, then one status message that
@@ -9,15 +11,17 @@ Built on a2a-sdk 1.2.x:
   error in a turn ends the task as FAILED (phase ``failed``, error
   ``internal``); the details go to the server log only.
 * `Mem2ARequestHandler` (a ``DefaultRequestHandlerV2``) adds the Mem2A rules:
-  it refuses unactivated SendMessage (-32008) before a task exists, runs one
-  turn at a time per task, answers a retried message from the task instead of
-  processing it twice, filters stored dossiers by current access on every
-  read, and screens and caps push notification configs.
+  it refuses unactivated SendMessage (-32008) before a task exists, uses the
+  caller's current access for every request on a task, runs one turn at a
+  time per task, answers a retried message from the task instead of
+  processing it twice, and screens and caps push notification configs.
 * `Deliveries` listens to the engine and runs *internal turns* through the SDK
   (`run_internal_turn`), so updates are stored, pushed and streamed exactly
-  like client-driven turns.
+  like client-driven turns. For a finished task it replaces the stored
+  dossier instead, with no event.
 * `QueuedPushSender` sends push notifications in the background, in order, with
-  retries, so no reply waits for a webhook.
+  retries, so no reply waits for a webhook; `PushPolicy` says which webhook
+  origins each agent may use.
 * `AuthMiddleware` authenticates every JSON-RPC request (HTTP 401 otherwise);
   `ExtensionEchoMiddleware` echoes the activated extensions in the
   ``A2A-Extensions`` response header, which the SDK does not do.
@@ -29,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import itertools
 import json
 import logging
@@ -46,6 +51,7 @@ from collections.abc import (
     Coroutine,
     Iterable,
     Iterator,
+    Mapping,
 )
 from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass
@@ -119,7 +125,7 @@ from mem2a import models
 from mem2a.admin import admin_routes
 from mem2a.auth import AuthenticationError, Authenticator, Identity
 from mem2a.card import build_agent_card
-from mem2a.engine import MemoryEngine, Payloads, Reply
+from mem2a.engine import MemoryEngine, Payloads, Reply, TaskRecord
 from mem2a.validation import ValidationMode, check_outgoing
 
 
@@ -215,6 +221,11 @@ def _no_leaks(operation: str) -> Iterator[None]:
 _ORIGIN = re.compile(r'^(https?)://(\[[^\]]+\]|[^/:?#@\[\]]+)(?::(\d+|\*))?/?$', re.IGNORECASE)
 _DEFAULT_PORT = {'http': '80', 'https': '443'}
 
+#: Webhook origins registered for agents: a list, for every agent, or a
+#: mapping from agent (``agent:sales-assistant``, or ``*`` for every agent)
+#: to its origins. See `PushPolicy`.
+PushOrigins = Iterable[str] | Mapping[str, Iterable[str]]
+
 
 def _pattern(origin: str) -> tuple[str, str, str]:
     match = _ORIGIN.match(origin.strip())
@@ -236,33 +247,85 @@ def _origin_of(url: str) -> tuple[str, str, str] | None:
     return parts.scheme, host.lower(), str(port or _DEFAULT_PORT[parts.scheme])
 
 
+def _is_address(host: str) -> bool:
+    """An IP address or ``localhost``: nothing a DNS answer could redirect."""
+    if host == 'localhost':
+        return True
+    try:
+        ipaddress.ip_address(host.strip('[]'))
+    except ValueError:
+        return False
+    return True
+
+
 class PushPolicy:
-    """Which webhook URLs memory will call (spec 11.4).
+    """Which webhooks memory calls (spec 8.3.10 and 11.4).
+
+    Memory accepts a push config only if the URL's origin is registered for
+    the agent that owns the task, and only then does it deliver there.
 
     Args:
-        origins: If set, only these origins, for example
-            ``https://agent.example.com`` or ``http://127.0.0.1:*`` (any port).
-        validator: Otherwise, an async check. The default, the SDK's
-            ``validate_push_notification_url``, refuses hosts that resolve to
-            private, loopback or link-local addresses. None allows any URL.
+        origins: The webhook origins registered for agents: a list, for every
+            agent, or a mapping from agent (as authenticated, for example
+            ``agent:sales-assistant``; ``*`` for every agent) to its origins.
+            An origin is ``scheme://host[:port]``, and the port may be ``*``,
+            as in `LOCALHOST_ORIGINS`. None, the default, registers nothing:
+            memory then refuses every push config, and agents listen with
+            SubscribeToTask instead.
+        validator: Checks the address a webhook's host name resolves to, at
+            registration and again before each delivery (spec 8.3.10). The
+            default, the SDK's ``validate_push_notification_url``, refuses
+            names that resolve to private, loopback or link-local addresses.
+            Hosts given as an address (an IP literal, or ``localhost``) skip
+            it: they were registered as that address. None skips it always.
     """
 
     def __init__(
         self,
-        origins: Iterable[str] | None = None,
+        origins: PushOrigins | None = None,
         validator: UrlValidator | None = validate_push_notification_url,
     ) -> None:
-        self._origins = None if origins is None else [_pattern(o) for o in origins]
+        if isinstance(origins, str):
+            raise TypeError('push origins are a list or a mapping of origins, not one string')
+        if origins is None:
+            registered: Mapping[str, Iterable[str]] = {}
+        elif isinstance(origins, Mapping):
+            registered = origins
+        else:
+            registered = {'*': origins}
+        self._origins = {
+            agent: [_pattern(origin) for origin in values] for agent, values in registered.items()
+        }
         self._validator = validator
 
-    async def allows(self, url: str) -> bool:
-        if self._origins is not None:
-            origin = _origin_of(url)
-            return origin is not None and any(
-                origin[:2] == allowed[:2] and allowed[2] in ('*', origin[2])
-                for allowed in self._origins
+    def origins_for(self, agent: str) -> list[tuple[str, str, str]]:
+        """The (scheme, host, port) patterns registered for `agent`."""
+        return [*self._origins.get('*', ()), *self._origins.get(agent, ())]
+
+    async def refusal(self, url: str, agent: str) -> str | None:
+        """Why memory won't push to `url` for `agent`, or None if it will."""
+        allowed = self.origins_for(agent)
+        if not allowed:
+            return (
+                f'No webhook origins are registered for {agent}, so memory sends it no push '
+                'notifications. Listen with SubscribeToTask instead, or ask the operator of '
+                "this memory to register your webhook's origin."
             )
-        return self._validator is None or await self._validator(url)
+        origin = _origin_of(url)
+        if origin is None or not any(
+            origin[:2] == pattern[:2] and pattern[2] in ('*', origin[2]) for pattern in allowed
+        ):
+            return f'{url} is not on a webhook origin registered for {agent}.'
+        if not await self.reachable(url):
+            return f'Memory does not send push notifications to {url}.'
+        return None
+
+    async def reachable(self, url: str) -> bool:
+        """The `validator`'s check of where the URL's host name points now."""
+        origin = _origin_of(url)
+        if self._validator is None or (origin is not None and _is_address(origin[1])):
+            return True
+        return await self._validator(url)
 
 
 # ============================================================ push sender
@@ -281,8 +344,8 @@ class QueuedPushSender(PushNotificationSender):
     POST that fails with a network error, 408, 429 or 5xx is retried up to
     `retries` times with exponential backoff; redirects are not followed.
     Bodies are StreamResponse JSON with ``Content-Type: application/a2a+json``,
-    plus ``Authorization`` and ``X-A2A-Notification-Token`` as configured. The
-    `policy` is checked again before every POST.
+    plus ``Authorization`` and ``X-A2A-Notification-Token`` as configured.
+    Before every POST, `policy` checks again where the host name points.
     """
 
     def __init__(
@@ -351,7 +414,7 @@ class QueuedPushSender(PushNotificationSender):
         for attempt in range(self._retries + 1):
             if attempt:
                 await asyncio.sleep(self._backoff * 2 ** (attempt - 1))
-            if not await self._policy.allows(config.url):
+            if not await self._policy.reachable(config.url):
                 logger.warning('Not pushing task %s to %s: URL not allowed', task_id, config.url)
                 return
             try:
@@ -490,6 +553,12 @@ class Mem2ARequestHandler(DefaultRequestHandlerV2):
     * **Binding**: every operation on a task by anyone but the agent and
       principal that opened it gets TaskNotFoundError (the SDK scopes tasks
       by `Mem2AUser.user_name`).
+    * **Current access** (spec 10.3): every request for a task uses the
+      access it carries. When the task's own agent and principal call with
+      other groups than the ones stored, memory adopts them and re-evaluates
+      the task before serving the request: an open task gets a new dossier
+      version and an update, a finished task a new stored dossier. GetTask,
+      ListTasks, stream snapshots and commits then all see one version.
     * **One turn at a time**: a2a-sdk 1.2.x answers a blocking SendMessage
       with the first INPUT_REQUIRED or terminal event on the task's shared
       event stream, even one from an earlier turn still in flight, such as an
@@ -499,10 +568,10 @@ class Mem2ARequestHandler(DefaultRequestHandlerV2):
       history gets the task back without being processed again, even when the
       task has completed (so a retried commit returns its receipt and is never
       recorded twice).
-    * **Reads**: GetTask, ListTasks, stream snapshots and replies filter stored
-      dossiers by the principal's current access, in any task state.
-    * **Push configs**: URLs must pass the `PushPolicy`; each task has at
-      most `max_push_configs`; configs get ids (``push-1``, ...); responses
+    * **Push configs**: the URL's origin must be registered for the calling
+      agent (`PushPolicy`); each task has at most `max_push_configs`, and
+      beyond that memory answers InvalidParams (-32602) with a message that
+      starts ``limit-exceeded:``; configs get ids (``push-1``, ...); responses
       never echo credentials or tokens.
     * **Errors**: unexpected exceptions become a generic internal error.
     """
@@ -529,8 +598,10 @@ class Mem2ARequestHandler(DefaultRequestHandlerV2):
         self.engine = engine
         self.push_policy = push_policy
         self.max_push_configs = max_push_configs
+        self.validation = validation
         self.deliveries = Deliveries(engine, self)
         self._configs = push_config_store
+        self._store = task_store
         self._turn_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
@@ -552,14 +623,13 @@ class Mem2ARequestHandler(DefaultRequestHandlerV2):
             result: Task | Message
             if not task_id:
                 result = await super().on_message_send(params, context)
-            else:
-                async with self.turn_lock(task_id):
-                    answered = await self._answered(params, context)
-                    if answered is not None:
-                        result = answered
-                    else:
-                        result = await super().on_message_send(params, context)
-            return self._visible(result, context) if isinstance(result, Task) else result
+                return result
+            async with self.turn_lock(task_id):
+                answered = await self._answered(params, context)
+                if answered is not None:
+                    return answered
+                result = await super().on_message_send(params, context)
+                return result
 
     async def on_message_send_stream(
         self, params: SendMessageRequest, context: ServerCallContext
@@ -570,11 +640,11 @@ class Mem2ARequestHandler(DefaultRequestHandlerV2):
             async with self.turn_lock(task_id) if task_id else contextlib.nullcontext():
                 answered = await self._answered(params, context) if task_id else None
                 if answered is not None:
-                    yield self._visible(answered, context)
+                    yield answered
                     return
                 async with aclosing(super().on_message_send_stream(params, context)) as events:
                     async for event in events:
-                        yield self._visible(event, context) if isinstance(event, Task) else event
+                        yield event
 
     async def _admit(self, params: SendMessageRequest, context: ServerCallContext) -> None:
         if C.EXTENSION_URI not in context.requested_extensions:
@@ -587,7 +657,7 @@ class Mem2ARequestHandler(DefaultRequestHandlerV2):
             raise RuntimeError('An unauthenticated request reached the handler')
         message = params.message
         if message.task_id:
-            task = await self._stored(message.task_id, context)  # only for its owner
+            task = await self._owned(message.task_id, context)
             # a2a-sdk 1.2.1 gives a follow-up that names only its taskId a new,
             # random contextId (A2A says to infer the task's); its events then
             # carry the wrong contextId and the next turn FAILS the task.
@@ -612,71 +682,97 @@ class Mem2ARequestHandler(DefaultRequestHandlerV2):
     # --------------------------------------------------------------- reads
     async def on_get_task(self, params: GetTaskRequest, context: ServerCallContext) -> Task | None:
         with _no_leaks('GetTask'):
-            await super().on_get_task(params, context)  # only for its owner
-            await self.deliveries.settle(params.id)  # so the dossier is current
-            task = await super().on_get_task(params, context)
-            return None if task is None else self._visible(task, context)
+            await self._owned(params.id, context)
+            await self.deliveries.settle(params.id)  # GetTask reflects every update
+            task: Task | None = await super().on_get_task(params, context)
+            return task
 
     async def on_list_tasks(
         self, params: ListTasksRequest, context: ServerCallContext
     ) -> ListTasksResponse:
         with _no_leaks('ListTasks'):
+            identity = context.state.get(IDENTITY_KEY)
+            if isinstance(identity, Identity):
+                for record in self.engine.tasks():
+                    if _owner(record.identity) == _owner(identity):
+                        await self._use_access(record.id, identity)
+                        await self.deliveries.settle(record.id)
             page: ListTasksResponse = await super().on_list_tasks(params, context)
-            for task in page.tasks:
-                visible = self._visible(task, context)
-                if visible is not task:
-                    task.CopyFrom(visible)
             return page
 
     async def on_subscribe_to_task(
         self, params: SubscribeToTaskRequest, context: ServerCallContext
     ) -> AsyncGenerator[Event, None]:
         with _no_leaks('SubscribeToTask'):
+            await self._owned(params.id, context)
             async with aclosing(super().on_subscribe_to_task(params, context)) as events:
                 async for event in events:
-                    yield self._visible(event, context) if isinstance(event, Task) else event
+                    yield event
 
     async def on_cancel_task(
         self, params: CancelTaskRequest, context: ServerCallContext
     ) -> Task | None:
         with _no_leaks('CancelTask'):
-            await self._stored(params.id, context)  # only for its owner
+            await self._owned(params.id, context)
             async with self.turn_lock(params.id):  # after any update in flight
-                task = await super().on_cancel_task(params, context)
-            return None if task is None else self._visible(task, context)
+                task: Task | None = await super().on_cancel_task(params, context)
+                return task
 
-    def _visible(self, task: Task, context: ServerCallContext) -> Task:
-        """`task` with its dossier filtered by current access (a copy if changed)."""
-        viewer = context.state.get(IDENTITY_KEY)
-        visible: Task | None = None
-        for a, artifact in enumerate(task.artifacts):
-            if artifact.artifact_id != C.DOSSIER_ARTIFACT:
-                continue
-            for p, part in enumerate(artifact.parts):
-                if part.media_type != C.DOSSIER or not part.HasField('data'):
-                    continue
-                dossier = models.Dossier.model_validate(MessageToDict(part.data))
-                shown = self.engine.visible_dossier(task.id, dossier, viewer)
-                if shown is not dossier:
-                    if visible is None:
-                        visible = Task()
-                        visible.CopyFrom(task)
-                    visible.artifacts[a].parts[p].CopyFrom(new_data_part(shown.dump(), C.DOSSIER))
-        return visible or task
-
+    # -------------------------------------------------------------- access
     async def _stored(self, task_id: str, context: ServerCallContext) -> Task:
-        """The stored task, unfiltered, for its owner only (TaskNotFoundError)."""
+        """The stored task, for its owner only (TaskNotFoundError otherwise)."""
         task: Task | None = await super().on_get_task(GetTaskRequest(id=task_id), context)
         if task is None:
             raise TaskNotFoundError
         return task
+
+    async def _owned(self, task_id: str, context: ServerCallContext) -> Task:
+        """The stored task, for its owner only, as the caller's current access
+        shows it (spec 10.3; see `_use_access`)."""
+        task = await self._stored(task_id, context)
+        identity = context.state.get(IDENTITY_KEY)
+        if isinstance(identity, Identity) and await self._use_access(task_id, identity):
+            task = await self._stored(task_id, context)
+        return task
+
+    async def _use_access(self, task_id: str, identity: Identity) -> bool:
+        """If the caller's groups differ from the task's, adopt them and
+        re-evaluate the task now (`Deliveries.reevaluate`). True if so."""
+        if not self.engine.use_access(task_id, identity):
+            return False
+        await self.deliveries.reevaluate(task_id)
+        return True
+
+    async def restate(self, record: TaskRecord) -> None:
+        """Re-evaluate a finished task against current access (spec 10.3).
+
+        If its dossier changes (`MemoryEngine.refilter`), the new version
+        replaces the stored ``dossier`` artifact. No event is sent: the task
+        takes no more turns, and its next read returns the new version.
+        """
+        dossier = self.engine.refilter(record.id)
+        if dossier is None:
+            return
+        context = ServerCallContext(
+            user=Mem2AUser(record.identity), state={IDENTITY_KEY: record.identity}
+        )
+        task = await self._store.get(record.id, context)
+        if task is None:
+            return
+        data = dossier.dump()
+        check_outgoing('dossier', data, self.validation)
+        for artifact in task.artifacts:
+            if artifact.artifact_id == C.DOSSIER_ARTIFACT:
+                del artifact.parts[:]
+                artifact.parts.append(new_data_part(data, media_type=C.DOSSIER))
+        await self._store.save(task, context)
 
     # --------------------------------------------------------- push configs
     async def on_create_task_push_notification_config(
         self, params: TaskPushNotificationConfig, context: ServerCallContext
     ) -> TaskPushNotificationConfig:
         with _no_leaks('CreateTaskPushNotificationConfig'):
-            await self._stored(params.task_id, context)  # only for its owner
+            await self._owned(params.task_id, context)
             await self._admit_push(params, params.task_id, context)
             config = await super().on_create_task_push_notification_config(params, context)
             return _without_secrets(config)
@@ -685,6 +781,7 @@ class Mem2ARequestHandler(DefaultRequestHandlerV2):
         self, params: GetTaskPushNotificationConfigRequest, context: ServerCallContext
     ) -> TaskPushNotificationConfig:
         with _no_leaks('GetTaskPushNotificationConfig'):
+            await self._owned(params.task_id, context)
             config = await super().on_get_task_push_notification_config(params, context)
             return _without_secrets(config)
 
@@ -692,6 +789,7 @@ class Mem2ARequestHandler(DefaultRequestHandlerV2):
         self, params: ListTaskPushNotificationConfigsRequest, context: ServerCallContext
     ) -> ListTaskPushNotificationConfigsResponse:
         with _no_leaks('ListTaskPushNotificationConfigs'):
+            await self._owned(params.task_id, context)
             page = await super().on_list_task_push_notification_configs(params, context)
             return ListTaskPushNotificationConfigsResponse(
                 configs=[_without_secrets(config) for config in page.configs],
@@ -702,16 +800,17 @@ class Mem2ARequestHandler(DefaultRequestHandlerV2):
         self, params: DeleteTaskPushNotificationConfigRequest, context: ServerCallContext
     ) -> None:
         with _no_leaks('DeleteTaskPushNotificationConfig'):
+            await self._owned(params.task_id, context)
             await super().on_delete_task_push_notification_config(params, context)
 
     async def _admit_push(
         self, config: TaskPushNotificationConfig, task_id: str, context: ServerCallContext
     ) -> None:
         """Screen a push config's URL, give it an id, and enforce the per-task cap."""
-        if not await self.push_policy.allows(config.url):
-            raise InvalidParamsError(
-                message=f'Memory does not send push notifications to {config.url}'
-            )
+        identity: Identity = context.state[IDENTITY_KEY]
+        refusal = await self.push_policy.refusal(config.url, identity.agent)
+        if refusal is not None:
+            raise InvalidParamsError(message=refusal)
         existing = await self._configs.get_info(task_id, context) if task_id else []
         ids = {c.id for c in existing}
         if not config.id:
@@ -722,6 +821,10 @@ class Mem2ARequestHandler(DefaultRequestHandlerV2):
                 'notification configs. Delete one first.',
                 data={'code': 'limit-exceeded'},
             )
+
+
+def _owner(identity: Identity) -> tuple[str, str]:
+    return identity.agent, identity.principal
 
 
 def _without_secrets(config: TaskPushNotificationConfig) -> TaskPushNotificationConfig:
@@ -771,7 +874,9 @@ class Deliveries:
 
     Refreshes are coalesced per task (at most one running and one queued).
     The engine recomputes the dossier inside the turn, so access is checked
-    at delivery time, and an unchanged dossier produces nothing.
+    at delivery time, and an unchanged dossier produces nothing. A task that
+    has finished takes no turns: after an access change, its stored dossier
+    is replaced instead (`Mem2ARequestHandler.restate`), with no event.
     """
 
     def __init__(self, engine: MemoryEngine, handler: Mem2ARequestHandler) -> None:
@@ -806,6 +911,11 @@ class Deliveries:
         pending = self._refreshing.get(task_id)
         if pending is not None:
             await asyncio.wait({pending})
+
+    async def reevaluate(self, task_id: str) -> None:
+        """Re-evaluate `task_id` now, as a change would, and wait until done."""
+        self._schedule_refreshes([task_id])
+        await self.settle(task_id)
 
     async def sweep(self) -> list[str]:
         """End every task past its ``expiresAt``; returns the task ids."""
@@ -843,7 +953,14 @@ class Deliveries:
     async def _turn(self, task_id: str, kind: InternalTurn) -> None:
         async with self._handler.turn_lock(task_id):
             record = self._engine.task(task_id)
-            if record is None or not record.open:
+            if record is None:
+                return
+            if not record.open:
+                if kind == 'refresh':  # finished: a new stored dossier, if any
+                    try:
+                        await self._handler.restate(record)
+                    except Exception:
+                        logger.exception('Re-evaluating finished task %s failed', task_id)
                 return
             call_context = ServerCallContext(
                 user=Mem2AUser(record.identity),  # the task's owner
@@ -977,7 +1094,7 @@ def create_app(
     authenticator: Authenticator,
     card: AgentCard | None = None,
     rpc_path: str = RPC_PATH,
-    push_origins: Iterable[str] | None = None,
+    push_origins: PushOrigins | None = None,
     push_url_validator: UrlValidator | None = validate_push_notification_url,
     push_client: httpx.AsyncClient | None = None,
     push_retries: int = 3,
@@ -992,15 +1109,24 @@ def create_app(
     Args:
         url: Public base URL, used in the Agent Card.
         authenticator: Turns requests into identities (see `mem2a.auth`).
-        card: The Agent Card; by default `build_agent_card` with the engine's
-            watch timeout.
-        push_origins: If set, the only webhook origins memory will call, for
-            example ``['https://agents.example.com']``; ``http://127.0.0.1:*``
-            allows any port (see `LOCALHOST_ORIGINS`). Other URLs get
-            InvalidParams.
-        push_url_validator: Without `push_origins`, screens webhook URLs. The
-            default refuses private and loopback addresses (SSRF, spec 11.4);
-            None allows any URL.
+        card: The Agent Card to serve. By default, `build_agent_card` for
+            ``url + rpc_path`` with the engine's watch timeout and the dev
+            token scheme; pass your own to change the name, description,
+            entity types or security schemes.
+        rpc_path: Where the JSON-RPC endpoint lives (default ``/a2a/jsonrpc``).
+        push_origins: The webhook origins registered for agents (spec 8.3.10):
+            a list, for every agent, or a mapping from agent (for example
+            ``agent:sales-assistant``; ``*`` for every agent) to its origins,
+            such as ``https://hooks.example.com`` or ``http://127.0.0.1:*``
+            (any port; see `LOCALHOST_ORIGINS`). None, the default, registers
+            none: memory refuses every push config (InvalidParams), and agents
+            listen with SubscribeToTask.
+        push_url_validator: Checks the address a webhook's host name resolves
+            to, at registration and before each delivery. The default, the
+            SDK's ``validate_push_notification_url``, refuses names that
+            resolve to private, loopback or link-local addresses; hosts given
+            as an address (an IP literal or ``localhost``) skip it. None skips
+            it always.
         push_client: The HTTP client that delivers push notifications. The app
             closes it on shutdown.
         push_retries, push_backoff: Retries per push notification, and the

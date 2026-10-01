@@ -10,9 +10,11 @@ Starts a Mem2A memory on localhost, seeded with the spec's Acme story
 1. Tom's sales agent wants to send Acme a renewal quote. Memory says hold:
    legal paused Acme pricing (fact f-311, constraint c-17, precedent p-4).
 2. Legal clears the pricing (f-340 supersedes f-311). Memory pushes a new
-   dossier to Tom's webhook, and c-17 lapses.
+   dossier to Tom's webhook, and c-17 lapses. A push is only a signal (spec
+   8.3.7), so Tom's agent reads the task (GetTask) and acts on what it reads.
 3. Priya's agent is about to draft a follow-up to Acme. It negotiates too,
-   and watches its task (SubscribeToTask, through `Mem2AClient.watch`).
+   and keeps a stream open on its task (SubscribeToTask, through
+   `Mem2AClient.watch`).
 4. Tom's agent sends the quote and commits. Memory records a claim, and
    Priya's agent hears about it right away.
 5. The CRM confirms the claim. Priya's agent hears that too, and cancels its
@@ -146,7 +148,8 @@ async def main() -> int:
         engine,
         url=memory_host.url,
         authenticator=DevTokenAuthenticator(),
-        push_origins=[webhook_host.url],  # memory calls this webhook, and nothing else
+        # The one webhook origin registered, for Tom's agent only (spec 8.3.10).
+        push_origins={'agent:sales-assistant': [webhook_host.url]},
         push_client=local_http(),
         validation='raise',
     )
@@ -167,16 +170,23 @@ async def main() -> int:
         show_dossier(dossier)
         say('tom', 'Holding the quote. Memory will call my webhook if this changes.')
 
-        # 2. Legal clears the pricing; memory calls Tom's agent back.
+        # 2. Legal clears the pricing; memory calls Tom's agent back. The push
+        #    is a signal: the agent reads the task and acts on what it reads.
         print()
         say('legal', 'Approves Acme pricing at $1.2M a year (f-340 supersedes f-311).')
         legal_clears(engine)
-        dossier, update = await webhook.next_update()
-        show_update('push to tom', update, dossier)
+        pushed, update = await webhook.next_update()
+        show_update('push to tom', update, pushed)
         say('', f'  Summary: "{update.summary}"')
-        say('tom', 'No constraints left. Sending the quote.')
+        dossier = dossier_of(await tom.get(tom_task.id))  # what memory says now
+        assert dossier is not None and not dossier.constraints
+        say(
+            'tom',
+            f'Reads dossier {dossier.version} before acting: no constraints left. '
+            'Sending the quote.',
+        )
 
-        # 3. Priya's agent negotiates too, and watches instead of leaving a webhook.
+        # 3. Priya's agent negotiates too, and keeps a stream open instead.
         print()
         say('priya', 'About to draft a follow-up to Acme. Asking memory first.')
         priya_task = await priya.negotiate(PRIYA_INTENT)
@@ -216,7 +226,7 @@ async def main() -> int:
 
             priya_dossier, priya_update = await asyncio.wait_for(anext(watch), 5)
             assert priya_update is not None
-            show_update('watch for priya', priya_update, priya_dossier)
+            show_update('stream to priya', priya_update, priya_dossier)
 
             # 5. A system of record confirms the claim.
             print()
@@ -224,7 +234,7 @@ async def main() -> int:
             engine.confirm_fact(recorded.fact_id, by='system:crm')
             priya_dossier, priya_update = await asyncio.wait_for(anext(watch), 5)
             assert priya_update is not None
-            show_update('watch for priya', priya_update, priya_dossier)
+            show_update('stream to priya', priya_update, priya_dossier)
             say('priya', 'Tom already sent the quote, so no follow-up now. Canceling.')
             canceled = await priya.cancel(priya_task.id)
             say(

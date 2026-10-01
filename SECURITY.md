@@ -4,7 +4,7 @@ Mem2A is a protocol for agents that act inside companies, so security problems i
 
 ## Reporting a problem
 
-Please don't open a public issue for a security problem. Report it privately through GitHub's private vulnerability reporting on this repository (**Security → Report a vulnerability**). If that isn't available to you, contact a maintainer listed in [MAINTAINERS.md](MAINTAINERS.md) directly.
+Please don't open a public issue for a security problem. Report it privately through GitHub's private vulnerability reporting on this repository (**Security → Report a vulnerability**). If that isn't available to you, contact a maintainer listed in [MAINTAINERS.md](MAINTAINERS.md) directly, or write to the team through [Sentra's contact page](https://www.sentra.app/contact) and ask for a private channel. Please leave the details of the problem out of that first message.
 
 We aim to acknowledge reports within three working days.
 

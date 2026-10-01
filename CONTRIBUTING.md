@@ -15,6 +15,7 @@ Thanks for helping. Mem2A is an early draft, which is the cheapest time to chang
 | Build an implementation, in any language | Start with the [implementer's guide](docs/implementers-guide.md); get [listed](IMPLEMENTATIONS.md) |
 | Report two implementations that don't work together | [Interop report](https://github.com/mem2a/mem2a/issues/new?template=interop-report.yml) |
 | Break the security model | Read [SECURITY.md](SECURITY.md) first |
+| Talk to the maintainers privately | [Sentra's contact page](https://www.sentra.app/contact): design partnerships, deployments, anything you'd rather not post in public |
 
 ## Your first code contribution, in about 15 minutes
 
@@ -55,11 +56,11 @@ Put it in `examples/<name>/` with a README that says what it shows and how to ru
 
 ## Working on the reference implementation
 
-The reference implementation in [`python/`](python) should stay small and readable. It's there to show the protocol working and to test other implementations, not to be a production memory. Its [README](python/README.md) explains how it's organized.
+The reference implementation in [`python/`](python) should stay small and readable. It's there to show the protocol working and to test other implementations, not to be a production memory. Its [README](python/README.md) explains how to use it, and [ARCHITECTURE.md](python/ARCHITECTURE.md) how it's organized: a map of the modules, how a turn flows through them, and which function and test cover each MUST in the spec.
 
 ## Where to talk
 
-Use issues for now: questions, ideas and proposals are all welcome there. Please keep discussion about security problems private ([SECURITY.md](SECURITY.md)).
+Use issues for now: questions, ideas and proposals are all welcome there. For anything you'd rather not post in public, use [Sentra's contact page](https://www.sentra.app/contact). Please keep discussion about security problems private ([SECURITY.md](SECURITY.md)).
 
 ## Sign-off
 

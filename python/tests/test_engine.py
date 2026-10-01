@@ -123,14 +123,12 @@ def test_acme_dossiers_match_the_spec_examples() -> None:
         example('09-listen-stream-claim.json', C.DOSSIER, 0), *loose
     )
 
-    # Example 04: a commit against 12 is told what changed since.
+    # A commit against 12 records nothing and is told what changed since.
     stale = valid(engine.respond('t', TOM_ID, commit(tom_commit('12'))))
-    assert stale.error is not None and stale.error.dump() == example(
-        '04-commit-stale.json', C.ERROR
-    )
-    assert without(stale.update.dump(), 'summary') == without(  # type: ignore[union-attr]
-        example('04-commit-stale.json', C.UPDATE), 'summary'
-    )
+    assert stale.error is not None and stale.error.code == 'stale-dossier'
+    assert stale.error.current_version == '13'
+    assert stale.update is not None and stale.update.previous_version == '12'
+    assert engine.claims() == []
 
     # Example 09: Tom's claim reaches Priya as dossier 15.
     done = valid(engine.respond('t', TOM_ID, commit(tom_commit('13'))))
@@ -150,14 +148,85 @@ def test_acme_dossiers_match_the_spec_examples() -> None:
 
 
 @needs_examples
+def test_globex_stale_commit_matches_the_spec_example() -> None:
+    """Example 04: refused against 20, then recorded against 21 with a conflict."""
+    engine = MemoryEngine(first_version=20)
+    engine.add_source('crm:opportunity/globex-renewal-2026', kind='record')
+    engine.add_fact(
+        'f-401',
+        'Globex asked for a 15% discount on its renewal.',
+        source='crm:opportunity/globex-renewal-2026',
+        confirmed_by='system:crm',
+        entities=['account:globex', 'deal:globex-renewal-2026'],
+    )
+    sam = DevTokenAuthenticator.parse('dev:deal-desk-assistant:user:sam:group:sales')
+    sam_intent = {
+        'action': 'approve_discount',
+        'summary': 'Approve a 15% renewal discount for Globex',
+        'entities': ['account:globex', 'deal:globex-renewal-2026'],
+        'onBehalfOf': 'user:sam',
+    }
+    first = valid(engine.negotiate('s', 'c', sam, intent(sam_intent))).dossier
+    assert first is not None and first.version == '20' and first.watching == ['f-401']
+
+    # 10:05: finance freezes discounts, and a policy turns the freeze into c-50.
+    engine.add_source(
+        'email:finance-discount-freeze-2026-09-30',
+        kind='email',
+        title='Discount freeze, effective now',
+        at=datetime(2026, 9, 30, 10, 5, tzinfo=timezone.utc),
+    )
+    engine.add_fact(
+        'f-410',
+        'Finance froze discounts above 10% for the rest of the quarter.',
+        source='email:finance-discount-freeze-2026-09-30',
+        confirmed_by='user:cfo',
+        entities=['account:globex', 'policy:discounts'],
+    )
+    engine.add_policy(
+        'c-50',
+        "Don't approve discounts above 10% this quarter without the CFO's sign-off.",
+        level='must',
+        basis=['f-410'],
+        actions=['approve_discount'],
+        until='The quarter ends, or the CFO signs off.',
+    )
+
+    # Sam's agent reports against 20 before it hears about 21.
+    name = '04-commit-stale.json'
+    stale = valid(engine.respond('s', sam, commit(example(name, C.COMMIT, 0))))
+    assert stale.error is not None and stale.error.dump() == example(name, C.ERROR)
+    assert stale.update is not None
+    assert without(stale.update.dump(), 'summary') == without(example(name, C.UPDATE), 'summary')
+    assert stale.dossier is not None
+    loose = ('summary', 'expiresAt')  # wording and the clock are memory's own
+    assert without(stale.dossier.dump(), *loose) == without(example(name, C.DOSSIER), *loose)
+    assert engine.claims() == [] and engine.review_queue == []
+
+    # It commits again against 21, naming the constraint its action went against.
+    done = valid(engine.respond('s', sam, commit(example(name, C.COMMIT, 1))))
+    assert done.receipt is not None and done.receipt.based_on == '21'
+    expected = example(name, C.RECEIPT)
+    assert done.receipt.conflicts == expected['conflicts'] == ['c-50']
+    assert [r.status for r in done.receipt.recorded] == ['claim']
+    assert [(r.kind, r.item_id) for r in engine.review_queue] == [('conflict', 'c-50')]
+
+
+@needs_examples
 def test_titan_dossier_matches_the_spec_example() -> None:
-    engine = seeds.seeded_engine('titan')
+    now = datetime(2026, 9, 29, 9, 0, tzinfo=timezone.utc)
+    engine = seeds.seeded_engine('titan', clock=lambda: now)
     question = valid(engine.negotiate('m', 'c', MAYA_ID, intent(MAYA_INTENT)))
     assert question.question is not None
-    assert question.question.dump() == example('06-question.json', C.QUESTION)
+    loose = ('summary', 'expiresAt')  # wording and the clock are memory's own
+    assert without(question.question.dump(), *loose) == without(
+        example('06-question.json', C.QUESTION), *loose
+    )
+    # Memory declares a watchTimeout (P7D), so the question says when it lapses.
+    assert question.question.expires_at == now + timedelta(days=7)
     dossier = valid(engine.respond('m', MAYA_ID, answer('q-1', 'No.'))).dossier
     assert dossier is not None and dossier.version == '7'
-    loose = ('summary', 'expiresAt')
+    assert dossier.expires_at == now + timedelta(days=7)
     assert without(dossier.dump(), *loose) == without(example('07-answer.json', C.DOSSIER), *loose)
 
 
@@ -287,6 +356,35 @@ def test_lost_access_reads_exactly_like_retirement() -> None:
         b.update.summary,
         b.text,
     )
+
+
+def test_summaries_only_see_what_the_principal_may_see() -> None:
+    # Spec 11.3: access filtering happens before any model (here, the
+    # pluggable summarizer) sees candidate items.
+    seen: list[str] = []
+
+    def summarize(facts: Any, precedent: Any, constraints: Any) -> str:
+        seen.extend(item.id for item in (*facts, *precedent, *constraints))
+        return 'A brief.'
+
+    engine = seeded_engine(summarize=summarize)
+    zoe = Identity('agent:x', 'user:zoe', frozenset())
+    engine.negotiate('z', 'c', zoe, intent({**TOM_INTENT, 'onBehalfOf': 'user:zoe'}))
+    assert seen == ['f-208']
+
+
+def test_drafts_stay_in_their_task() -> None:
+    # Spec 10.6: memory never shows a draft to anyone else, or learns from it.
+    engine = seeded_engine()
+    engine.negotiate('m', 'c', MAYA_ID, intent(MAYA_INTENT))
+    engine.respond('m', MAYA_ID, answer('q-1', 'No.'))
+    sam = Identity('agent:y', 'user:sam', frozenset({'group:leadership'}))
+    sams = {**without(MAYA_INTENT, 'draft'), 'onBehalfOf': 'user:sam'}
+    replies = [engine.negotiate('s', 'c', sam, intent(sams))]
+    replies.append(engine.respond('s', sam, answer('q-1', 'No.')))
+    shown = json.dumps([r.dossier.dump() if r.dossier else r.text for r in replies])
+    assert MAYA_INTENT['draft'] not in shown
+    assert all(MAYA_INTENT['draft'] not in f.statement for f in engine.facts())
 
 
 def test_claim_visibility() -> None:
@@ -492,6 +590,27 @@ def test_invalid_answers_and_commits_keep_the_phase() -> None:
 
 
 # ---------------------------------------------------------------- negotiate
+def test_receivers_ignore_members_this_version_does_not_define() -> None:
+    engine = seeded_engine()
+    data = {**TOM_INTENT, 'priority': 'high'}  # spec 2.5: ignored, not refused
+    reply = valid(engine.negotiate('t', 'c', TOM_ID, intent(data)))
+    assert reply.phase == 'awaiting-commit'
+    assert 'priority' not in engine.task('t').intent.dump()  # type: ignore[union-attr]
+
+    report = tom_commit(version(engine, 't'))
+    report['claims'][0]['confidence'] = 'high'
+    report['claims'][0]['evidence'][0]['sha256'] = 'f00d'
+    done = valid(engine.respond('t', TOM_ID, commit({**report, 'reviewedBy': 'user:x'})))
+    assert done.phase == 'committed'
+    [claim] = engine.claims()
+    assert claim.evidence[0].dump() == tom_commit('x')['claims'][0]['evidence'][0]
+
+    # What this version does define is still validated.
+    invalid = {**TOM_INTENT, 'priority': 'high', 'entities': 'account:acme'}
+    reply = valid(engine.negotiate('u', 'c', TOM_ID, intent(invalid)))
+    assert (reply.phase, reply.error.code) == ('refused', 'invalid-intent')  # type: ignore[union-attr]
+
+
 def test_refusals() -> None:
     engine = seeded_engine(max_open_tasks=1)
 
@@ -564,26 +683,57 @@ def test_failures_end_the_task() -> None:
     assert engine.task('t').open is False  # type: ignore[union-attr]
 
 
-# --------------------------------------------------------- reading dossiers
-def test_stored_dossiers_are_filtered_by_current_access() -> None:
+# ------------------------------------------------------------------ access
+def test_a_request_with_other_groups_re_evaluates_an_open_task() -> None:
     engine = seeded_engine()
-    dossier = engine.negotiate('t', 'c', TOM_ID, intent(TOM_INTENT)).dossier
-    assert dossier is not None
-    engine.respond('t', TOM_ID, commit(tom_commit(dossier.version)))  # the task is over
-    assert engine.visible_dossier('t', dossier) is dossier
+    first = engine.negotiate('t', 'c', TOM_ID, intent(TOM_INTENT)).dossier
+    assert first is not None and ids(first.facts) == ['f-311', 'f-208']
+    # Someone else's request changes nothing, and neither do Tom's same groups.
+    assert not engine.use_access('t', PRIYA_ID)
+    assert not engine.use_access('t', TOM_ID)
+
+    # Tom has left group:sales, which f-311's source needs (spec 10.3).
+    without_groups = Identity(TOM_ID.agent, TOM_ID.principal, frozenset())
+    assert engine.use_access('t', without_groups)
+    reply = valid(engine.refresh('t'))  # an ordinary new version, and an update
+    assert reply.dossier is not None and reply.dossier.version == '13'
+    assert ids(reply.dossier.facts) == ['f-208']
+    assert (reply.dossier.precedent, reply.dossier.constraints) == ([], [])
+    assert changes(reply) == [('f-311', 'removed'), ('c-17', 'removed'), ('p-4', 'removed')]
+    # A commit against that version is recorded.
+    done = valid(engine.respond('t', without_groups, commit(tom_commit('13'))))
+    assert done.phase == 'committed' and done.receipt is not None
+
+
+def test_finished_tasks_follow_access_without_updates() -> None:
+    engine = seeded_engine()
+    notified: list[list[str]] = []
+    engine.on_change(notified.append)
+    first = engine.negotiate('t', 'c', TOM_ID, intent(TOM_INTENT)).dossier
+    assert first is not None
+    engine.respond('t', TOM_ID, commit(tom_commit(first.version)))  # the task is over
+    assert engine.refilter('t') is None  # nothing changed
 
     engine.set_source_readers(LEGAL_MEETING, ['group:legal'])
-    shown = engine.visible_dossier('t', dossier)
+    assert notified[-1] == ['t']  # the finished task is re-evaluated too
+    assert engine.refresh('t') is None  # but gets no update: it is over
+    shown = engine.refilter('t')
+    assert shown is not None and shown.version == '13'
     validation.validate('dossier', shown.dump())
     assert ids(shown.facts) == ['f-208'] and (shown.precedent, shown.constraints) == ([], [])
-    assert shown.watching == ['f-208'] and shown.version.startswith(f'{dossier.version}-redacted-')
-    assert 'legal' not in shown.summary.lower()
+    assert shown.watching == ['f-208'] and 'legal' not in shown.summary.lower()
+    assert engine.task('t').dossier == shown  # type: ignore[union-attr]
+    assert engine.refilter('t') is None  # stable until access changes again
 
-    # The caller's own credentials count too: the narrower access wins.
-    engine.set_source_readers(LEGAL_MEETING, ['group:sales'])
-    assert engine.visible_dossier('t', dossier) is dossier
-    without_groups = Identity(TOM_ID.agent, TOM_ID.principal, frozenset())
-    assert ids(engine.visible_dossier('t', dossier, without_groups).facts) == ['f-208']
+    # Access comes back, and so do the items, under another new version.
+    engine.set_source_readers(LEGAL_MEETING, ['group:sales', 'group:legal'])
+    again = engine.refilter('t')
+    assert again is not None and again.version == '14'
+    assert again.watching == first.watching
+
+    # A request with other groups re-evaluates a finished task the same way.
+    assert engine.use_access('t', Identity(TOM_ID.agent, TOM_ID.principal, frozenset()))
+    assert ids(engine.refilter('t').facts) == ['f-208']  # type: ignore[union-attr]
 
 
 def test_when_conditions() -> None:

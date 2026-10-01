@@ -13,6 +13,7 @@ from google.protobuf.json_format import MessageToDict
 
 from mem2a import (
     build_agent_card,
+    dossier_of,
     format_duration,
     mem2a_params,
     models,
@@ -87,6 +88,85 @@ def test_parse_rejects_what_the_schema_rejects() -> None:
                 ],
             }
         )
+
+
+def test_receivers_ignore_members_this_version_does_not_define() -> None:
+    """Spec 2.5: drop unknown members, then validate what remains."""
+    intent = {'action': 'x', 'summary': 'x', 'entities': ['a:b'], 'onBehalfOf': 'u'}
+    later = {
+        **intent,
+        'priority': 'high',
+        'metadata': {'https://example.com/k': {'any': 'thing'}},  # metadata stays whole
+    }
+    parsed = models.Intent.parse(later)
+    assert parsed.dump() == {**intent, 'metadata': later['metadata']}
+    assert validation.known_members('intent', later) == parsed.dump()
+    assert 'priority' in later  # the input is left alone
+    with pytest.raises(SchemaValidationError):  # defined members are still checked
+        models.Intent.parse({**later, 'entities': []})
+
+    # Nested objects too: a claim, its evidence, a precedent's source.
+    commit = {
+        'basedOn': '1',
+        'action': 'x',
+        'outcome': 'done',
+        'summary': 'x',
+        'claims': [
+            {
+                'statement': 'x',
+                'weight': 'heavy',
+                'evidence': [{'kind': 'url', 'ref': 'r', 'hash': 'h'}],
+            }
+        ],
+    }
+    assert models.Commit.parse(commit).claims[0].evidence[0].dump() == {'kind': 'url', 'ref': 'r'}
+    source = {'ref': 'decision:x', 'kind': 'decision', 'trust': 'high'}
+    precedent = {'id': 'p-1', 'version': '1', 'statement': 'x', 'relevance': 'y', 'source': source}
+    dossier = {
+        'version': '1',
+        'summary': 'x',
+        'facts': [],
+        'precedent': [{**precedent, 'score': 'x'}],
+        'constraints': [],
+        'watching': ['p-1'],
+        'confidence': 'x',
+    }
+    known = validation.known_members('dossier', dossier)
+    without_trust = {'ref': 'decision:x', 'kind': 'decision'}
+    assert known['precedent'] == [{**precedent, 'source': without_trust}]
+    assert 'confidence' not in known
+    # Senders emit only defined members: models built from more drop the rest.
+    assert models.Dossier.model_validate(dossier).dump() == known
+
+
+def test_clients_tolerate_what_a_later_memory_may_add() -> None:
+    card = build_agent_card('https://memory.example.com/rpc', watch_timeout=timedelta(days=7))
+    card.capabilities.extensions[0].params['futureParam'] = 'on'
+    params = mem2a_params(card)
+    assert params is not None and params.watch_timeout == 'P7D'
+
+    dossier = {
+        'version': '12',
+        'summary': 'x',
+        'facts': [],
+        'precedent': [],
+        'constraints': [],
+        'watching': [],
+        'confidence': 'high',
+    }
+    push = {
+        'artifactUpdate': {
+            'taskId': 't',
+            'contextId': 'c',
+            'artifact': {
+                'artifactId': 'dossier',
+                'name': 'dossier',
+                'parts': [{'mediaType': 'application/vnd.mem2a.dossier+json', 'data': dossier}],
+            },
+        }
+    }
+    read = dossier_of(push)
+    assert read is not None and read.version == '12' and 'confidence' not in read.dump()
 
 
 @pytest.mark.parametrize(

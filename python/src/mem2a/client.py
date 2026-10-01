@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""A small Mem2A client for acting agents, plus helpers that read payloads.
+"""For acting agents: `Mem2AClient` negotiates with any Mem2A memory, follows
+the task's dossier, commits and cancels, and the reading helpers pull Mem2A
+payloads out of tasks, stream events and push bodies.
 
     memory = await Mem2AClient.connect('https://memory.example.com', token=token)
     task = await memory.negotiate(intent)
@@ -10,9 +12,13 @@
     task = await memory.commit(task, commit)
     receipt = receipt_of(task)          # or error_of(task), e.g. stale-dossier
 
-The helpers (`dossier_of`, `update_of`, ...) accept a Task, a StreamResponse
-(from `Mem2AClient.subscribe`), a Message, an Artifact or a TaskStatus, and
-the JSON of a Task or a StreamResponse (a push body, a raw JSON-RPC result).
+A webhook body is only a signal that the dossier changed (spec 8.3.7): before
+acting on one, call `get` and act on the dossier it returns.
+
+The helpers (`dossier_of`, `update_of`, ...) accept a Task or a StreamResponse
+(a stream event), as an object or as JSON (a push body, a raw JSON-RPC
+result), and also a Message, an Artifact or a TaskStatus object. Members a
+newer memory adds to a payload are ignored (spec 2.5).
 """
 
 from __future__ import annotations

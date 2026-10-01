@@ -4,9 +4,13 @@
 The JSON Schemas in ``mem2a/schemas`` are the contract. These models are a
 convenience for building and reading payloads:
 
-* ``Intent.parse(data)`` validates `data` against the intent schema, then
-  returns the model. Every top-level payload has ``parse``.
-* ``payload.dump()`` returns the JSON-ready dict that goes on the wire.
+* ``Intent.parse(data)`` drops members this version doesn't define (spec
+  2.5), validates the rest against the intent schema, and returns the model.
+  Every top-level payload has ``parse``.
+* ``Model.model_validate(data)`` builds a model without the schema check, and
+  ignores unknown members too.
+* ``payload.dump()`` returns the JSON-ready dict that goes on the wire: only
+  the members the schema defines.
 
 Mem2A payloads contain no JSON numbers: versions are strings, and so is the
 card's ``watchTimeout`` (an ISO 8601 duration; see `parse_duration`).
@@ -45,24 +49,27 @@ Level = Literal['must', 'should']
 
 
 class Payload(BaseModel):
-    """Base class: camelCase aliases, unknown fields rejected (as in the schemas)."""
+    """Base class: camelCase aliases; unknown members are ignored (spec 2.5)."""
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra='forbid')
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra='ignore')
 
     #: Schema file stem for top-level payloads (``'intent'``, ...); None for parts.
     schema_name: ClassVar[str | None] = None
 
     @classmethod
     def parse(cls, data: Any) -> Self:
-        """Validate `data` against the payload's JSON Schema and return the model.
+        """Read a payload as a receiver must (spec 2.5): drop the members this
+        version doesn't define, validate the rest against the payload's JSON
+        Schema, and return the model.
 
         Raises:
-            mem2a.validation.SchemaValidationError: `data` breaks the schema.
+            mem2a.validation.SchemaValidationError: what remains breaks the schema.
         """
         if cls.schema_name is None:
             raise TypeError(f'{cls.__name__} is not a top-level Mem2A payload')
-        validation.validate(cls.schema_name, data)
-        return cls.model_validate(data)
+        known = validation.known_members(cls.schema_name, data)
+        validation.validate(cls.schema_name, known)
+        return cls.model_validate(known)
 
     def dump(self) -> dict[str, Any]:
         """The JSON-ready dict, as sent on the wire."""
@@ -208,6 +215,9 @@ class Question(Payload):
     id: str
     text: str
     options: list[str] | None = None
+    #: When memory may stop waiting for the answer (set whenever memory
+    #: declares a ``watchTimeout``, spec 8.1.6).
+    expires_at: datetime | None = None
     metadata: dict[str, Any] | None = None
 
 

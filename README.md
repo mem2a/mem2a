@@ -28,19 +28,31 @@ python examples/acme-quote/demo.py
 ```
     tom | About to send Acme a renewal quote. Asking memory first.
  memory | dossier 12, awaiting-commit: "Hold: Do not send Acme new pricing until legal clears it."
+        |   fact f-311 (confirmed by user:general-counsel): Legal paused new pricing for Acme on Friday, pending a contract review.
+        |   MUST c-17: Do not send Acme new pricing until legal clears it. (basis: f-311)
     tom | Holding the quote. Memory will call my webhook if this changes.
+
   legal | Approves Acme pricing at $1.2M a year (f-340 supersedes f-311).
  memory | push to tom: dossier 13 replaces 12.
+        |   + fact f-340 (confirmed by user:general-counsel): Legal approved Acme renewal pricing at $1.2M a year.
         |   - constraint c-17
-    tom | No constraints left. Sending the quote.
+    tom | Reads dossier 13 before acting: no constraints left. Sending the quote.
+
+  priya | About to draft a follow-up to Acme. Asking memory first.
+ memory | dossier 14: "Nothing here blocks this. Latest: Legal approved Acme renewal pricing at $1.2M a year."
+
     tom | Quote sent. Committing against dossier 13.
  memory | receipt cm-1: f-341 recorded as a claim.
- memory | watch for priya: dossier 15 replaces 14.
+ memory | stream to priya: dossier 15 replaces 14.
         |   + fact f-341 (claim by user:tom): Tom sent Acme a renewal quote at $1.2M a year.
+
+    crm | The CRM shows the quote went out: confirms f-341.
+ memory | stream to priya: dossier 16 replaces 15.
+        |   ~ fact f-341 (confirmed by system:crm): Tom sent Acme a renewal quote at $1.2M a year.
   priya | Tom already sent the quote, so no follow-up now. Canceling.
 ```
 
-(Trimmed; the demo prints every dossier in full.)
+(Trimmed. The demo prints the first dossier in full, then every change to it.)
 
 Prefer curl, JavaScript or Go? Start a sandbox memory with `mem2a serve --seed acme --dev-admin` and follow the [wire quickstart](docs/wire-quickstart.md): every request, ready to paste.
 
@@ -53,13 +65,14 @@ Mem2A is a draft, and now is the cheapest time to change it.
 - **Seen an agent do something it shouldn't have?** [Tell us in three questions](https://github.com/mem2a/mem2a/issues/new?template=use-case.yml).
 - **Have an opinion?** Weigh in on an [open question](https://github.com/mem2a/mem2a/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+question%22), such as [how claims get confirmed](https://github.com/mem2a/mem2a/issues/3) or [what rules should look like](https://github.com/mem2a/mem2a/issues/4).
 - **Running agents from more than one vendor?** [Become a design partner](https://github.com/mem2a/mem2a/issues/new?template=design-partner.yml).
+- **Prefer to talk privately?** [Contact the team at Sentra](https://www.sentra.app/contact), who maintain Mem2A.
 - **Star the repo** to follow the draft to 1.0.
 
 **If you build things**
 
 | You are | Start here |
 | --- | --- |
-| Building an agent | [Write an agent in 20 lines](python/README.md#write-an-agent-in-20-lines) · [a complete sales agent](examples/sales-agent) · [the wire quickstart](docs/wire-quickstart.md), for any language |
+| Building an agent | [Write an agent in Python](python/README.md#write-an-agent) · [a complete sales agent](examples/sales-agent) · [the wire quickstart](docs/wire-quickstart.md), for any language |
 | Building a memory or knowledge graph | [The implementer's guide](docs/implementers-guide.md) · [test yours with `mem2a-conform`](python/README.md#test-your-own-memory) · [get listed](IMPLEMENTATIONS.md) |
 | Into protocols and standards | [The spec](spec/v0.1/mem2a.md) · [propose a change](https://github.com/mem2a/mem2a/issues/new?template=spec-change.yml) · [how decisions get made](GOVERNANCE.md) |
 | Into security | [The threat model](docs/threat-model.md) · [try to break the claims model](SECURITY.md) |
@@ -88,7 +101,7 @@ sequenceDiagram
 | **Discover** | The agent reads memory's Agent Card, which declares Mem2A and how to prove who the agent acts for. |
 | **Negotiate** | The agent sends an **intent**: what it's about to do, the things it touches, and who it acts for. Memory answers with a versioned **dossier**, asks a question back, or refuses. |
 | **Listen** | While the task is open, memory sends a new dossier version whenever something the agent relied on changes. |
-| **Commit** | The agent reports what it did against the version it relied on. Memory records it as a **claim** and tells other agents watching the same things. |
+| **Commit** | The agent reports what it did against the version it relied on. Memory records it as a **claim** and tells the other agents watching the same things, if they may see it. |
 
 The rules that keep it safe:
 
@@ -98,7 +111,7 @@ The rules that keep it safe:
 - **Memory advises; something else enforces.** Stopping an agent that ignores its dossier is the job of a sandbox or watchdog.
 - **Stale reports are refused.** No action is recorded against information that has since changed until the agent has seen the change.
 
-More: [how it works](docs/how-it-works.md), message by message in [the examples](spec/v0.1/examples), and every rule in [the spec](spec/v0.1/mem2a.md).
+More: [how it works](docs/how-it-works.md), message by message in [the examples](spec/v0.1/examples), and every rule in [the spec](spec/v0.1/mem2a.md). New to A2A? The [A2A primer](docs/a2a-primer.md) covers what Mem2A uses, the [glossary](docs/glossary.md) defines every term, and the [docs](docs) suggest a reading order.
 
 ## What Mem2A is, and isn't
 
@@ -118,14 +131,16 @@ Draft 0.1. What exists today:
 
 - the [specification](spec/v0.1/mem2a.md), with normative [JSON Schemas](spec/v0.1/schemas) and [worked examples](spec/v0.1/examples);
 - a [reference memory and agent client in Python](python), on the official A2A SDK;
-- `mem2a-conform`, which checks any running memory against the spec;
+- `mem2a-conform`, which checks a running memory against much of the spec;
 - a [threat model](docs/threat-model.md), and [design decision records](adrs).
 
 What's next is on the [roadmap](docs/roadmap.md).
 
 ## Who's behind it
 
-Mem2A was started by the team at Sentra, who build company memory. It isn't tied to any product: it's Apache 2.0, conformance is judged against the spec rather than any implementation, and we intend to propose it to the A2A project. We're looking for [co-maintainers from other companies](https://github.com/mem2a/mem2a/issues/19).
+Mem2A was started by the team at [Sentra](https://sentra.app), who build company memory. It isn't tied to any product: it's Apache 2.0, conformance is judged against the spec rather than any implementation, and we intend to propose it to the A2A project. We're looking for [co-maintainers from other companies](https://github.com/mem2a/mem2a/issues/19).
+
+To talk to us directly, about a design partnership, a deployment, or anything you'd rather not post in an issue, use [Sentra's contact page](https://www.sentra.app/contact). The [maintainers](MAINTAINERS.md) are listed with their GitHub handles.
 
 ## What's in this repo
 
@@ -135,7 +150,7 @@ Mem2A was started by the team at Sentra, who build company memory. It isn't tied
 | [`python`](python) | The reference memory, agent client, sandbox server and `mem2a-conform`. |
 | [`examples`](examples) | The Acme story in one command, and a standalone sales agent. |
 | [`conformance`](conformance) | Checks that the spec's examples follow its rules. |
-| [`docs`](docs) | Why, how it works, wire quickstart, implementer's guide, threat model, FAQ and roadmap. |
+| [`docs`](docs) | Why, how it works, an A2A primer, a glossary, the wire quickstart, the implementer's guide, the threat model, the FAQ and the roadmap. |
 | [`adrs`](adrs) | Why the design is the way it is. |
 
 ## License

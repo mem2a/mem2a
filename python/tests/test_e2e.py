@@ -12,12 +12,13 @@ from typing import Any
 
 import pytest
 from a2a.types import StreamResponse
-from a2a.utils.errors import A2AError, InvalidParamsError, UnsupportedOperationError
+from a2a.utils.errors import InvalidParamsError, UnsupportedOperationError
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from mem2a import (
     EXTENSION_URI,
     IN_REPLY_TO_KEY,
+    LOCALHOST_ORIGINS,
     PHASE_KEY,
     MemoryEngine,
     PushTarget,
@@ -344,7 +345,7 @@ async def test_errors_fail_the_task_without_leaking(memory: Memory, monkeypatch:
     assert memory.engine.open_tasks() == []
 
     # Outside a turn too: a generic JSON-RPC error, never the exception's text.
-    monkeypatch.setattr(memory.engine, 'visible_dossier', boom)
+    monkeypatch.setattr(memory.engine, 'use_access', boom)
     body = (await memory.rpc('GetTask', {'id': task.id})).json()
     assert body['error']['code'] == -32603 and body['error']['message'] == 'Internal error.'
 
@@ -470,34 +471,82 @@ async def test_other_principals_do_not_see_the_task_listed(memory: Memory) -> No
     assert [t['id'] for t in mine] == [task.id] and theirs == []
 
 
-async def test_reads_use_current_access(memory: Memory) -> None:
+async def test_reads_use_the_access_of_each_request(memory: Memory) -> None:
     tom = await memory.client(TOM)
     task = await tom.negotiate(TOM_INTENT)
     full = dossier_of(task)
     assert full is not None and full.watching == ['f-311', 'f-208', 'p-4', 'c-17']
+    stream = memory.collect(tom.subscribe(task.id))
+    await stream.wait_for(lambda events: len(events) >= 1)
 
-    # Tom's credentials no longer carry group:sales, which f-311's source needs.
+    # Tom's credentials no longer carry group:sales, which f-311's source
+    # needs. Memory adopts them and re-evaluates the task: an ordinary new
+    # version (spec 10.3), delivered as an update like any other change.
     narrower = await memory.client(TOM_WITHOUT_GROUPS)
     shown = dossier_of(check(await narrower.get(task.id)))
-    # A redacted view gets its own version, so a version always names one content.
-    assert shown is not None and shown.version.startswith(f'{full.version}-redacted-')
-    assert dossier_of(check(await narrower.get(task.id))).version == shown.version  # type: ignore[union-attr]
+    assert shown is not None and shown.version == '13'
     assert (shown.watching, shown.precedent, shown.constraints) == (['f-208'], [], [])
+    assert dossier_of(check(await narrower.get(task.id))) == shown  # stable
+    await stream.wait_for(lambda events: len(events) >= 3)
+    assert changes(update_of(stream.items[2])) == [
+        ('f-311', 'removed'),
+        ('c-17', 'removed'),
+        ('p-4', 'removed'),
+    ]
+    # ListTasks and a stream's opening snapshot serve the same version.
     params = {'includeArtifacts': True}
     [listed] = (await memory.rpc('ListTasks', params, token=TOM_WITHOUT_GROUPS)).json()['result'][
         'tasks'
     ]
-    assert dossier_of(listed).watching == ['f-208']  # type: ignore[union-attr]
+    assert dossier_of(listed) == shown
     [snapshot] = await memory.sse('SubscribeToTask', {'id': task.id}, token=TOM_WITHOUT_GROUPS)
-    assert dossier_of(snapshot['result']).watching == ['f-208']  # type: ignore[union-attr]
-    assert dossier_of(await tom.get(task.id)) == full  # the original credentials see it all
+    assert dossier_of(snapshot['result']) == shown
 
-    # A finished task's stored dossier is filtered too.
-    await tom.commit(task, tom_commit(full.version))
+    # Tom's full credentials bring the items back, under another version.
+    back = dossier_of(check(await tom.get(task.id)))
+    assert back is not None and back.version == '14' and back.watching == full.watching
+
+
+async def test_a_commit_against_what_get_task_returned_is_recorded(memory: Memory) -> None:
+    # Before spec 10.3 settled this, a narrower credential read a filtered
+    # view with a version of its own, which no commit could be based on.
+    tom = await memory.client(TOM)
+    task = await tom.negotiate(TOM_INTENT)
+    narrower = await memory.client(TOM_WITHOUT_GROUPS)
+    current = check(await narrower.get(task.id))
+    version = dossier_of(current).version  # type: ignore[union-attr]
+    assert version != dossier_of(task).version  # type: ignore[union-attr]
+    done = check(await narrower.commit(current, tom_commit(version)))
+    assert (state_of(done), phase_of(done)) == ('TASK_STATE_COMPLETED', 'committed')
+    assert receipt_of(done).based_on == version  # type: ignore[union-attr]
+
+
+async def test_finished_tasks_follow_access_without_events(memory: Memory) -> None:
+    tom = await memory.client(TOM)
+    task = await tom.negotiate(TOM_INTENT, push=PushTarget(memory.webhook_url))
+    done = check(await tom.commit(task, tom_commit(dossier_of(task).version)))  # type: ignore[union-attr]
+    await memory.settle()
+    pushed = len(memory.webhook.items)
+
+    # Sales may no longer read the legal meeting: the stored dossier of the
+    # finished task is replaced with a new version, and nothing is sent.
     memory.engine.set_source_readers(LEGAL_MEETING, ['group:legal'])
-    done = check(await tom.get(task.id))
-    assert state_of(done) == 'TASK_STATE_COMPLETED'
-    assert dossier_of(done).watching == ['f-208']  # type: ignore[union-attr]
+    await memory.settle()
+    now = check(await tom.get(task.id))
+    assert (state_of(now), phase_of(now)) == ('TASK_STATE_COMPLETED', 'committed')
+    dossier = dossier_of(now)
+    assert dossier is not None and (dossier.version, dossier.watching) == ('13', ['f-208'])
+    assert now.status == done.status and receipt_of(now) == receipt_of(done)
+    assert len(memory.webhook.items) == pushed  # no event for a finished task
+
+    # A read with other groups, from Tom's own agent, re-evaluates it too.
+    with_legal = await memory.client('dev:sales-assistant:user:tom:group:sales,group:legal')
+    again = dossier_of(check(await with_legal.get(task.id)))
+    first = dossier_of(task)
+    assert again is not None and first is not None
+    assert (again.version, again.watching) == ('14', first.watching)
+    await memory.settle()
+    assert len(memory.webhook.items) == pushed
 
 
 async def test_revoked_access_shows_as_removed(memory: Memory) -> None:
@@ -674,22 +723,52 @@ async def test_push_configs_are_screened_capped_and_quiet(make_memory: MakeMemor
     await tom.add_push(task.id, PushTarget(memory.webhook_url))
     with pytest.raises(InvalidParamsError, match='limit-exceeded'):
         await tom.add_push(task.id, PushTarget(memory.webhook_url))
+    params = {'taskId': task.id, 'url': memory.webhook_url}
+    error = (await memory.rpc('CreateTaskPushNotificationConfig', params)).json()['error']
+    assert error['code'] == -32602 and error['message'].startswith('limit-exceeded:')
     configs = (await memory.rpc('ListTaskPushNotificationConfigs', {'taskId': task.id})).json()
     assert [c['id'] for c in configs['result']['configs']] == ['push-1', 'push-2', 'push-3']
     assert 'authentication' not in json.dumps(configs) and 't2' not in json.dumps(configs)
 
 
-async def test_push_origins(make_memory: MakeMemory) -> None:
-    allowlisted = await make_memory(push_origins=['https://agents.example.com'])
-    tom = await allowlisted.client(TOM)
-    with pytest.raises(InvalidParamsError):
-        await tom.negotiate(TOM_INTENT, push=PushTarget(allowlisted.webhook_url))
-    assert allowlisted.engine.open_tasks() == []
+async def test_push_origins_are_registered_per_agent(make_memory: MakeMemory) -> None:
+    unregistered = await make_memory(push_origins=None)  # create_app's default
+    tom = await unregistered.client(TOM)
+    with pytest.raises(InvalidParamsError, match='No webhook origins are registered for agent:'):
+        await tom.negotiate(TOM_INTENT, push=PushTarget(unregistered.webhook_url))
+    assert unregistered.engine.open_tasks() == []
+    assert phase_of(await tom.negotiate(TOM_INTENT)) == 'awaiting-commit'  # streams still work
 
-    screened = await make_memory(push_origins=None)  # the default SSRF screen
-    tom = await screened.client(TOM)
-    with pytest.raises(A2AError):
-        await tom.negotiate(TOM_INTENT, push=PushTarget(screened.webhook_url))
+    elsewhere = await make_memory(push_origins=['https://agents.example.com'])
+    tom = await elsewhere.client(TOM)
+    with pytest.raises(InvalidParamsError, match='not on a webhook origin registered'):
+        await tom.negotiate(TOM_INTENT, push=PushTarget(elsewhere.webhook_url))
+
+    per_agent = await make_memory(push_origins={'agent:sales-assistant': LOCALHOST_ORIGINS})
+    tom, priya = await per_agent.client(TOM), await per_agent.client(PRIYA)
+    task = await tom.negotiate(TOM_INTENT, push=PushTarget(per_agent.webhook_url))
+    assert phase_of(task) == 'awaiting-commit'
+    with pytest.raises(InvalidParamsError, match='agent:account-assistant'):
+        await priya.negotiate(PRIYA_INTENT, push=PushTarget(per_agent.webhook_url))
+
+
+async def test_registered_host_names_are_checked_where_they_point(
+    make_memory: MakeMemory,
+) -> None:
+    checked: list[str] = []
+
+    async def resolves_privately(url: str) -> bool:
+        checked.append(url)
+        return False
+
+    origins = ['http://hooks.internal.example:*', *LOCALHOST_ORIGINS]
+    memory = await make_memory(push_origins=origins, push_url_validator=resolves_privately)
+    tom = await memory.client(TOM)
+    with pytest.raises(InvalidParamsError, match='does not send push notifications'):
+        await tom.negotiate(TOM_INTENT, push=PushTarget('http://hooks.internal.example:9/hook'))
+    # An origin registered as an address has no name to resolve.
+    await tom.negotiate(TOM_INTENT, push=PushTarget(memory.webhook_url))
+    assert checked == ['http://hooks.internal.example:9/hook']
 
 
 async def test_cancel_ends_the_watch(memory: Memory) -> None:

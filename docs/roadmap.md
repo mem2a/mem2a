@@ -8,9 +8,10 @@ Each open item links to its issue. Comment there to help, or to argue with the p
 - [x] JSON Schemas for every payload, and worked examples
 - [x] Conformance checks for the examples
 - [x] Reference memory, agent client and sandbox server in Python, with the Acme demo
-- [x] `mem2a-conform`, which checks any running memory
+- [x] `mem2a-conform`, which checks much of the spec against any running memory
 - [x] Outside review by an agent builder, a memory implementer, a newcomer, and a spec and security reviewer; fixes applied
 - [x] Threat model
+- [x] An A2A primer, a glossary and diagrams for readers new to A2A
 - [ ] Design partners: teams running agents from more than one vendor ([sign up](https://github.com/mem2a/mem2a/issues/new?template=design-partner.yml))
 - [ ] Answers, from real deployments, to the [open questions](https://github.com/mem2a/mem2a/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+question%22)
 

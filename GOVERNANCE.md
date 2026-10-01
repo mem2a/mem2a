@@ -14,7 +14,7 @@ Mem2A is at draft 0.1. This is how decisions get made today, and how we intend t
 
 ## Vendor neutrality
 
-Mem2A was started by the team at Sentra, but it isn't tied to any memory product. Conformance is judged against the spec, not against any implementation, including ours. We're actively looking for [co-maintainers from other organizations](https://github.com/mem2a/mem2a/issues/19), especially teams building memory systems or running agents from several vendors.
+Mem2A was started by the team at [Sentra](https://sentra.app), but it isn't tied to any memory product. Conformance is judged against the spec, not against any implementation, including ours. We're actively looking for [co-maintainers from other organizations](https://github.com/mem2a/mem2a/issues/19), especially teams building memory systems or running agents from several vendors.
 
 ## Intellectual property
 
