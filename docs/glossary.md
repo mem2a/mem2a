@@ -8,11 +8,11 @@ Every term you'll meet in Mem2A, in alphabetical order. Terms marked *A2A* come 
 - **Agent Card** *(A2A)*: the JSON document at `/.well-known/agent-card.json` that says what an A2A server supports. A memory's card declares Mem2A ([spec 5](../spec/v0.1/mem2a.md#5-discovery), [example 01](../spec/v0.1/examples/01-agent-card.json)).
 - **Answer**: the agent's reply to a question from memory, sent on the same task ([spec 8.2](../spec/v0.1/mem2a.md#82-answer)).
 - **Artifact** *(A2A)*: an output of a task. Mem2A uses two: `dossier` and `receipt` ([spec 7.3](../spec/v0.1/mem2a.md#73-artifacts)).
-- **`awaiting-commit`**: the phase in which memory has delivered a dossier, watches it, and waits for the agent to act and commit.
-- **`basedOn`**: the dossier version a commit relied on. If it isn't the current version, the commit is stale.
+- **`awaiting-commit`**: the phase in which memory has delivered a dossier and watches it. The agent acts when the dossier allows it, then commits; or it waits for an update, or cancels.
+- **`basedOn`**: in a commit, the version of the latest dossier the agent has read: normally the one it acted on. If it isn't the current version, the commit is stale.
 - **`basis`**: the confirmed facts, precedent or policy a constraint derives from. Never a claim ([spec 9.4](../spec/v0.1/mem2a.md#9-facts-claims-and-receipts)).
 - **Claim**: a fact an agent reported in a commit, not yet confirmed by a person or a system of record. Claims never become constraints or precedent, and never lift anything ([spec 9](../spec/v0.1/mem2a.md#9-facts-claims-and-receipts), [ADR 0004](../adrs/0004-claims-are-not-facts.md)).
-- **Commit**: the agent's report, after acting, of what it did, against the dossier version it relied on. It carries claims and conflicts ([spec 8.4](../spec/v0.1/mem2a.md#84-commit)).
+- **Commit**: the agent's report, after acting, of what it did, against the latest dossier version it has read. It carries claims and conflicts ([spec 8.4](../spec/v0.1/mem2a.md#84-commit)).
 - **Confirmed fact**: a fact that a person or a system of record stands behind. It names them in `confirmedBy`.
 - **Conflict**: an item of the `basedOn` dossier that the agent's action went against, listed in its commit. Memory records it and routes it to a person ([example 04](../spec/v0.1/examples/04-commit-stale.json)).
 - **Constraint**: a rule that applies to an intent right now, such as "do not send Acme new pricing until legal clears it". Memory carries it; something outside the agent enforces it ([ADR 0003](../adrs/0003-memory-carries-rules-enforcement-elsewhere.md)).

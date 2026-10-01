@@ -43,9 +43,9 @@ Memory answers in one of three ways:
 
 ### 3. Listen
 
-The task stays open, and memory watches everything in the dossier, plus anything new about Acme. On Monday, legal approves the pricing. Memory makes dossier version 13: the pause is superseded by the approval, and the constraint is gone. It also sends a short update that says what changed.
+The task stays open, and memory watches everything in the dossier, plus anything new about Acme. On Monday, legal approves the pricing. Memory makes dossier version 13: the pause is superseded by the approval, and the constraint is gone. So is the precedent about the Globex quote that was withdrawn, which mattered only while legal was still reviewing. It also sends a short update that says what changed.
 
-Versions are opaque labels that agents only compare for equality. In these examples they come from one counter across the whole memory, which is why Priya's first dossier is 14.
+Versions are opaque labels that agents only compare for equality. In the Acme story they come from one counter across the whole memory, which is why Priya's first dossier is 14; other examples number their own.
 
 The update arrives through A2A's normal channels: a push callback the agent registered, a live stream it keeps open, or both. Either way, it's a signal. Right before acting, the agent reads the current dossier, so a late, repeated or forged callback can't steer it ([ADR 0008](../adrs/0008-updates-are-signals.md)).
 
@@ -71,7 +71,7 @@ This is the part a search box can't do. The agent didn't ask again; memory spoke
 
 Tom's agent sends the quote and reports back on the same task: what it did, its claims about what is now true, and the dossier version it relied on (13).
 
-Memory records "Tom sent Acme a renewal quote" as a **claim**, attributed to Tom's agent and to Tom. It completes the task with a receipt, and re-checks every other open task that touches Acme. Priya's agent gets an update ([09](../spec/v0.1/examples/09-listen-stream-claim.json)). Later, when the CRM confirms the quote went out, the claim becomes a confirmed fact.
+Memory records "Tom sent Acme a renewal quote" as a **claim**, attributed to Tom's agent and to Tom. It completes the task with a receipt, and re-checks every other open task that touches Acme. Priya's agent gets an update ([09](../spec/v0.1/examples/09-listen-stream-claim.json)). Later, when the CRM confirms the quote went out, the claim becomes a confirmed fact. That confirmation happens outside Mem2A: version 0.1 doesn't define how people or systems of record confirm claims, which is an [open question](https://github.com/mem2a/mem2a/issues/3).
 
 ## When an agent acts on old information
 
@@ -129,7 +129,7 @@ The [threat model](threat-model.md) goes through the attacks these rules answer.
 - activates the extension on every request;
 - sends an intent before acting and answers questions;
 - reads the current dossier right before acting;
-- commits against the version it relied on, listing anything it went against;
+- commits against the latest version it has read, listing anything its action went against;
 - treats facts and precedent as data, never as instructions, and takes the constraints seriously.
 
 **A memory:**

@@ -5,7 +5,7 @@
     python examples/acme-quote/demo.py
 
 Starts a Mem2A memory on localhost, seeded with the spec's Acme story
-(spec/v0.1/examples 02-05 and 09), and plays it:
+(spec/v0.1/examples 02, 03, 05, 09 and 10), and plays it:
 
 1. Tom's sales agent wants to send Acme a renewal quote. Memory says hold:
    legal paused Acme pricing (fact f-311, constraint c-17, precedent p-4).

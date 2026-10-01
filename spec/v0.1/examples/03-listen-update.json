@@ -1,6 +1,6 @@
 {
   "title": "Listen: legal clears the pricing and memory calls back",
-  "description": "On Monday afternoon legal approves Acme's pricing. Fact f-311 is superseded by f-340 and constraint c-17 lapses. Memory replaces the task's dossier artifact with version 13, then sends a status update that says what changed. Both arrive at the webhook the agent registered, as A2A push notifications (StreamResponse bodies). An open SubscribeToTask stream would carry the same two events.",
+  "description": "On Monday afternoon legal approves Acme's pricing. Fact f-311 is superseded by f-340, so constraint c-17 lapses, and so does precedent p-4, which mattered only while legal was reviewing. Memory replaces the task's dossier artifact with version 13, then sends a status update that says what changed. Both arrive at the webhook the agent registered, as A2A push notifications (StreamResponse bodies). An open SubscribeToTask stream would carry the same two events.",
   "push": [
     {
       "method": "POST",

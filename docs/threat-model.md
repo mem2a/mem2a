@@ -51,4 +51,5 @@ A compromised memory, model alignment, and enforcement are out of scope (see bel
 - Relevance leakage has no testable rule yet ([#1](https://github.com/mem2a/mem2a/issues/1)).
 - The identity profile is unfinished ([#11](https://github.com/mem2a/mem2a/issues/11)): token mapping, audiences and sender-constrained tokens.
 - Confirmation at scale is open ([#3](https://github.com/mem2a/mem2a/issues/3)). Whoever confirms claims becomes a target.
+- A task's history keeps the status messages memory sent, and A2A serves them back with the task. When a principal loses access, memory replaces the dossier ([spec 10.3](../spec/v0.1/mem2a.md#10-identity-and-permissions)), but the text of earlier status messages stays readable to the agent that received it.
 - The reference implementation uses unsigned development tokens. Never deploy it as is.

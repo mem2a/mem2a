@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Sample memories from the spec's stories, for the sandbox, demos and tests.
 
-* ``acme``: examples 02 to 05 and 09. Legal paused Acme pricing (fact
+* ``acme``: examples 02, 03, 05, 09 and 10. Legal paused Acme pricing (fact
   ``f-311``, version 3), so policy ``c-17`` says to hold the quote; precedent
   ``p-4`` recalls the Globex quote that had to be withdrawn. Dossier numbering
   starts at 12, so the first intent gets dossier 12. `legal_clears` plays
@@ -185,7 +185,7 @@ class Seed:
 
 
 SEEDS: dict[str, Seed] = {
-    'acme': Seed('The Acme quote (spec examples 02-05, 09)', 12, seed_acme),
+    'acme': Seed('The Acme quote (spec examples 02, 03, 05, 09, 10)', 12, seed_acme),
     'titan': Seed('The Titan update (spec examples 06-07)', 7, seed_titan),
     'empty': Seed('An empty memory', 1, lambda memory: None),
 }

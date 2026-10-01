@@ -17,7 +17,7 @@ mem2a serve --seed acme --dev-admin
 This starts a sandbox memory on `http://127.0.0.1:8000`, seeded with the spec's Acme story: Tom's agent is about to send Acme a renewal quote, but legal paused Acme pricing. It prints everything you need to talk to it:
 
 ```
-Mem2A sandbox memory, seeded with acme: The Acme quote (spec examples 02-05, 09)
+Mem2A sandbox memory, seeded with acme: The Acme quote (spec examples 02, 03, 05, 09, 10)
 
   Agent Card:  http://127.0.0.1:8000/.well-known/agent-card.json
   JSON-RPC:    http://127.0.0.1:8000/a2a/jsonrpc

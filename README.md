@@ -52,7 +52,7 @@ python examples/acme-quote/demo.py
   priya | Tom already sent the quote, so no follow-up now. Canceling.
 ```
 
-(Trimmed. The demo prints the first dossier in full, then every change to it.)
+(Trimmed. The demo prints the first dossier in full, then every change to it. The CRM's confirmation goes through the sandbox's admin routes: how claims get confirmed is outside Mem2A 0.1, and an [open question](https://github.com/mem2a/mem2a/issues/3).)
 
 Prefer curl, JavaScript or Go? Start a sandbox memory with `mem2a serve --seed acme --dev-admin` and follow the [wire quickstart](docs/wire-quickstart.md): every request, ready to paste.
 
@@ -101,7 +101,7 @@ sequenceDiagram
 | **Discover** | The agent reads memory's Agent Card, which declares Mem2A and how to prove who the agent acts for. |
 | **Negotiate** | The agent sends an **intent**: what it's about to do, the things it touches, and who it acts for. Memory answers with a versioned **dossier**, asks a question back, or refuses. |
 | **Listen** | While the task is open, memory sends a new dossier version whenever something the agent relied on changes. |
-| **Commit** | The agent reports what it did against the version it relied on. Memory records it as a **claim** and tells the other agents watching the same things, if they may see it. |
+| **Commit** | The agent reports what it did, against the latest version it has read. Memory records it as a **claim** and tells the other agents watching the same things, if they may see it. |
 
 The rules that keep it safe:
 

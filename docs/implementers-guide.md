@@ -45,6 +45,11 @@ Route each message by its single Mem2A payload and the task's phase, using the t
 
 Remember a task's processed `messageId`s, so a retry returns the task as it stands instead of being processed twice.
 
+Validate what agents send, after dropping what you don't know. The schemas allow no undefined members (`additionalProperties: false`), which keeps senders strict, but a receiver must ignore members that a later version adds ([2.5](../spec/v0.1/mem2a.md#2-conventions)). So remove the members this version doesn't define, then validate the rest; the reference implementation's `validation.known_members` shows how, and Ajv's `removeAdditional` option can do it for you. Two more things trip up validators:
+
+- **Formats** must be enforced ([2.4](../spec/v0.1/mem2a.md#2-conventions)). With Ajv, add `ajv-formats`.
+- **References:** the schemas' `$id`s are `https://w3id.org/mem2a/...` URLs, which don't resolve yet ([#21](https://github.com/mem2a/mem2a/issues/21)). Load `common.schema.json` into your validator yourself, rather than letting it fetch.
+
 ### 5. Building a dossier ([8.1](../spec/v0.1/mem2a.md#81-negotiate), [9](../spec/v0.1/mem2a.md#9-facts-claims-and-receipts), [10.3–10.4](../spec/v0.1/mem2a.md#10-identity-and-permissions))
 
 - **Pick relevant items:** facts about the intent's entities, the precedent that bears on the action, and the constraints your company's policies attach to them. Which items count as relevant is your judgment, and it's where your memory competes.

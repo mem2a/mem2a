@@ -1,6 +1,6 @@
 # The Acme quote
 
-The spec's worked example ([examples 02 to 05, 09 and 10](../../spec/v0.1/examples)), played end to end against the reference memory, with two agents:
+The spec's worked example ([examples 02, 03, 05, 09 and 10](../../spec/v0.1/examples)), played end to end against the reference memory, with two agents:
 
 - **Tom's sales agent** is about to send Acme a renewal quote. It negotiates first and leaves a webhook for updates. A push is only a signal ([spec 8.3.7](../../spec/v0.1/mem2a.md#83-listen)), so before it acts, the agent reads the task with `GetTask` and acts on that dossier.
 - **Priya's account agent** is about to draft a follow-up to Acme. It negotiates too, and keeps a stream open on its task with `Mem2AClient.watch` (`SubscribeToTask`).

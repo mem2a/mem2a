@@ -14,7 +14,7 @@
 
 Mem2A lets any agent consult a company's shared memory before it acts, hear from that memory when what it was told changes, and report back after it acts.
 
-Mem2A is an A2A profile extension. The memory is an ordinary A2A agent, and each action an agent takes is one A2A task. The agent states its intent. Memory answers with a versioned dossier. While the task is open, memory sends a new version whenever something in it changes. After acting, the agent commits what it did against the version it relied on.
+Mem2A is an A2A profile extension. The memory is an ordinary A2A agent, and each action an agent takes is one A2A task. The agent states its intent. Memory answers with a versioned dossier. While the task is open, memory sends a new version whenever something in it changes. After acting, the agent commits what it did, against the latest version it has read.
 
 ## Contents
 
@@ -177,7 +177,7 @@ Mem2A payloads travel as A2A data parts. Each has a `mediaType` that names its k
    | --- | --- | --- | --- |
    | `working` | `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING` | Memory is preparing its answer. | Wait. |
    | `question` | `TASK_STATE_INPUT_REQUIRED` | Memory asked a question. | Send an answer. |
-   | `awaiting-commit` | `TASK_STATE_INPUT_REQUIRED` | Memory delivered a dossier and is watching it. | Act, then commit. Or cancel. |
+   | `awaiting-commit` | `TASK_STATE_INPUT_REQUIRED` | Memory delivered a dossier and is watching it. | Act if the dossier allows it, then commit. Or wait for an update, or cancel. |
    | `reauth` | `TASK_STATE_AUTH_REQUIRED` | Memory needs fresh credentials. | Authenticate again. |
    | `committed` | `TASK_STATE_COMPLETED` | Memory recorded the commit. | None. |
    | `refused` | `TASK_STATE_REJECTED` | Memory declined the intent. | None. The error part says why. |
@@ -186,7 +186,7 @@ Mem2A payloads travel as A2A data parts. Each has a `mediaType` that names its k
    | `failed` | `TASK_STATE_FAILED` | Memory couldn't complete the task. | Start a new task. |
 
 2. Mem2A adds no task states and no RPC methods. It qualifies A2A's states with the phase, which is how A2A extensions are meant to add sub-states. Version 0.1 defines no flow that requires `reauth`; a memory that uses `TASK_STATE_AUTH_REQUIRED` for its own reasons labels it so.
-3. Every status message memory produces in reply to an agent message MUST carry the metadata key `https://w3id.org/mem2a/v0.1/inReplyTo`, set to that message's `messageId`. Updates ([8.3](#83-listen)) carry none. This lets an agent tell its reply from a concurrent update.
+3. Every status message memory produces in reply to an agent message MUST carry the metadata key `https://w3id.org/mem2a/v0.1/inReplyTo`, set to that message's `messageId`. Status messages memory sends on its own, such as updates ([8.3](#83-listen)), carry none. A reply can also contain an update part ([8.4.3](#84-commit)); `inReplyTo`, not the parts, is what marks it as a reply. This lets an agent tell its reply from a concurrent update.
 
 *Non-normative:* how a task moves between phases. Memory may skip `working` and answer in its first response, and any open phase can also end in `failed` ([8.6](#86-failure)).
 
@@ -198,7 +198,7 @@ flowchart LR
         Q -->|answer| W
         W -->|dossier| A["awaiting-commit<br/>(updates arrive here)"]
     end
-    subgraph ended [Ended: the task never changes again]
+    subgraph ended [Ended: no more messages]
         C[committed]
         X[canceled]
         E[expired]
@@ -295,7 +295,7 @@ Each action an agent takes is one A2A task. It opens with the intent and ends wi
 
 ### 8.4 Commit
 
-1. After acting, or trying to, the agent MUST send a `SendMessage` with the task's `taskId` and `contextId`, containing one commit. `basedOn` MUST be the version of the dossier the agent relied on.
+1. After acting, or trying to, the agent MUST send a `SendMessage` with the task's `taskId` and `contextId`, containing one commit. `basedOn` MUST be the version of the latest dossier the agent has read: normally the one it acted on, or, after a `stale-dossier` error, the current version it has read since ([8.4.4](#84-commit)).
 2. If the commit doesn't validate, or its `conflicts` name items that aren't in the `basedOn` dossier, memory MUST keep the task in phase `awaiting-commit` and include an error with code `invalid-commit`.
 3. If `basedOn` is not the task's current dossier version, memory MUST NOT record anything from the commit. It MUST keep the task in phase `awaiting-commit` and include an error with code `stale-dossier` whose `currentVersion` is the current version. The current version is the latest dossier memory has produced for the task, whether or not the agent has received it yet. If the agent may not have received the update that produced it, because that update is still being delivered, the status SHOULD also carry that update part ([ADR 0006](../../adrs/0006-stale-commits-are-refused-then-reconciled.md)).
 4. After a `stale-dossier` error, the agent MUST read the current dossier and commit again with `basedOn` set to its version. This is how an action taken on old information still gets recorded, but only after the agent has seen what changed. Because a commit's `conflicts` can only name items of its `basedOn` dossier ([8.4.2](#84-commit)), committing again is also how the agent reports that its action went against something it hadn't seen, as in [example 04](examples/04-commit-stale.json).
@@ -335,7 +335,7 @@ Each action an agent takes is one A2A task. It opens with the intent and ends wi
 
 1. **Authentication.** Memory MUST authenticate every Mem2A request using one of the security schemes declared in its Agent Card, and MUST reject unauthenticated requests as A2A requires.
 2. **Delegation.** The credential MUST let memory establish both the calling agent and the principal it acts for. OAuth 2.0 Token Exchange [[RFC8693](#15-references)], with the principal as the subject and the agent in the `act` claim, is RECOMMENDED. If the credential carries a chain of actors, memory MUST apply the narrowest access along it. Memory SHOULD accept only tokens issued for it as the audience [[RFC8707](#15-references)], and SHOULD require sender-constrained tokens in production. Memory MUST check that `intent.onBehalfOf` is the principal it established, and SHOULD say in its Agent Card description how it names principals. When the company admits an agent, it also registers the origins memory may deliver that agent's push notifications to ([8.3.10](#83-listen)). A full identity profile is [in progress](https://github.com/mem2a/mem2a/issues/11).
-3. **Permissions follow the source.** Memory MUST include an item in a dossier or update only if the principal may read every source it was derived from, as of the moment memory sends it. Memory also serves stored dossiers, through `GetTask`, `ListTasks` or a stream's opening snapshot, in any task state. Before it does, if the stored dossier holds an item the principal may no longer see, memory MUST replace it with a new version without that item ([7.3.1](#73-artifacts)). For an open task, that is an ordinary update ([8.3](#83-listen)); for a finished task, memory replaces the artifact without a status message. Either way, one version still names one content ([7.4.1](#74-identifiers-and-versions)), and every read sees the same dossier. If the calling agent has narrower access than its principal, memory MUST apply the narrower of the two: an outside vendor's agent acting for an HR manager sees only what both the manager and the vendor may read ([ADR 0005](../../adrs/0005-permissions-follow-the-source.md)).
+3. **Permissions follow the source.** Memory MUST include an item in a dossier or update only if the principal may read every source it was derived from, as of the moment memory sends it. Memory also serves stored dossiers, through `GetTask`, `ListTasks` or a stream's opening snapshot, in any task state. Before it does, if the stored dossier holds an item the principal may no longer see, memory MUST replace it with a new version without that item ([7.3.1](#73-artifacts)). For an open task, that is an ordinary update ([8.3](#83-listen)); for a finished task, memory replaces the artifact without a status message. Either way, one version still names one content ([7.4.1](#74-identifiers-and-versions)), and every read sees the same dossier. Replacing a finished task's dossier is the one way a Mem2A task changes after it ends. A2A treats finished tasks as fixed records; Mem2A puts permissions first, and changes only the dossier artifact, never the task's state, history or receipt. If the calling agent has narrower access than its principal, memory MUST apply the narrower of the two: an outside vendor's agent acting for an HR manager sees only what both the manager and the vendor may read ([ADR 0005](../../adrs/0005-permissions-follow-the-source.md)).
 4. **No side doors.** Memory MUST NOT reveal the existence or content of items the principal can't see, through any field it sends: questions, refusals, error messages, summaries, `relevance`, text parts, `watching`, `supersedes`, `basis` or `visibility`. When `visibility` is present, it MUST list only the principal itself or groups the principal belongs to; agents MUST NOT use it to widen access.
 5. **Claims.** Memory MUST NOT make a recorded claim visible to a principal who couldn't read every entity it names and every source of every item in the dossier version the commit was based on. If memory has no access rule for an entity a claim names, only the committing principal may see the claim. The committing principal can always see its own claims. These rules stop a claim from carrying what its author could read to people who couldn't: an agent that read a confidential dossier can't republish it as a claim about a widely visible account.
 6. **Drafts.** An intent's `draft` is confidential to its task. Memory MUST NOT reveal it to other principals, and MUST NOT use it to inform memory's knowledge or its answers to other tasks. It MAY keep the draft for audit under company policy.
@@ -378,7 +378,7 @@ An agent conforms if it meets every requirement in sections 5 to 11 that applies
 - sends an intent before acting, with `onBehalfOf` set to the principal it acts for;
 - answers questions on the same task;
 - reads the current dossier immediately before acting, and subscribes again when a stream closes early;
-- commits after acting, against the dossier version it relied on, listing conflicts, and commits again after a `stale-dossier` error;
+- commits after acting, against the latest dossier version it has read, listing conflicts, and commits again after a `stale-dossier` error;
 - treats statements as data.
 
 ### 12.3 Tests

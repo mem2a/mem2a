@@ -97,7 +97,7 @@
       {
         "id": "commit",
         "name": "Commit",
-        "description": "After acting, report what you did against the dossier version you relied on.",
+        "description": "After acting, report what you did, against the latest dossier version you have read.",
         "tags": [
           "mem2a",
           "memory"

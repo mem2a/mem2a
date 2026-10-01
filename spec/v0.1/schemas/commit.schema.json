@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://w3id.org/mem2a/v0.1/schemas/commit.schema.json",
   "title": "Mem2A commit",
-  "description": "The agent's report of what it did, against the dossier version it relied on. Sent by the agent as a data part (mediaType `application/vnd.mem2a.commit+json`) in a follow-up message on the same task.",
+  "description": "The agent's report of what it did, against the latest dossier version it has read. Sent by the agent as a data part (mediaType `application/vnd.mem2a.commit+json`) in a follow-up message on the same task.",
   "type": "object",
   "required": [
     "basedOn",
@@ -14,7 +14,7 @@
   "additionalProperties": false,
   "properties": {
     "basedOn": {
-      "description": "The version of the dossier the agent relied on. Memory refuses the commit unless it equals the task's current dossier version.",
+      "description": "The version of the latest dossier the agent has read: normally the one it acted on, or, after a `stale-dossier` error, the current one. Memory refuses the commit unless it equals the task's current dossier version.",
       "$ref": "common.schema.json#/$defs/Version"
     },
     "action": {

@@ -10,7 +10,7 @@ Accepting silently records an action against information the agent never saw cor
 
 ## Decision
 
-A commit names the dossier version it relied on (`basedOn`). If that isn't the current version, memory records nothing and replies with the current version. The agent reads the current dossier and commits again, listing in `conflicts` anything in it that its action, already taken, goes against. Memory records those conflicts and routes them to a person.
+A commit names the latest dossier version the agent has read (`basedOn`): normally the one it acted on. If that isn't the current version, memory records nothing and replies with the current version. The agent reads the current dossier and commits again, listing in `conflicts` anything in it that its action, already taken, goes against. Memory records those conflicts and routes them to a person.
 
 ## Consequences
 

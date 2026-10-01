@@ -46,7 +46,7 @@ A2A has three bindings: JSON-RPC, gRPC and HTTP+JSON (REST). Mem2A works over an
 // Authorization: Bearer <token>
 {
   "jsonrpc": "2.0",
-  "id": "1",                 // yours; the response echoes it
+  "id": "1",                 // yours; the response echoes it, if the server could read the request
   "method": "SendMessage",
   "params": { "message": { /* ... */ } }
 }
@@ -55,6 +55,10 @@ A2A has three bindings: JSON-RPC, gRPC and HTTP+JSON (REST). Mem2A works over an
 { "jsonrpc": "2.0", "id": "1", "result": { "task": { /* ... */ } } }
 { "jsonrpc": "2.0", "id": "1", "error": { "code": -32001, "message": "Task not found" } }
 ```
+
+A2A calls headers like `A2A-Version` and `A2A-Extensions` *service parameters*: settings for the whole request, which each binding carries its own way (HTTP headers here, metadata in gRPC) (A2A §3.2.6).
+
+The shape of `result` depends on the method. `SendMessage` returns `{"task": {...}}` (or `{"message": {...}}` for a plain reply, which Mem2A doesn't use), while `GetTask` and `CancelTask` return the task itself as `result`.
 
 The methods a Mem2A agent uses (A2A §3.1):
 
@@ -81,6 +85,7 @@ A message (A2A §4.1.4) is one turn from one side:
 | `taskId`, `contextId` | Which task the message belongs to. Leave both out of the first message; the server creates the task. Send both on every follow-up. |
 | `extensions` | URIs of the extensions this message uses. Mem2A messages list `https://w3id.org/mem2a/v0.1`. |
 | `metadata` | Extra data, keyed by namespace. Mem2A puts the phase here. |
+| `referenceTaskIds` | Other tasks this message refers to. Mem2A doesn't use them, and memory never follows them into someone else's task ([spec 10.7](../spec/v0.1/mem2a.md#10-identity-and-permissions)). |
 
 A part (A2A §4.1.6) holds one piece of content, and has exactly one of:
 
@@ -113,9 +118,9 @@ A task's state is one of these (A2A §4.1.3):
 | `TASK_STATE_CANCELED` | Terminal | The agent canceled, or the watch expired (phases `canceled`, `expired`). |
 | `TASK_STATE_FAILED` | Terminal | Memory couldn't finish (phase `failed`). |
 
-A terminal task never changes again, and A2A refuses new messages to it with `-32004`. Two Mem2A phases share `TASK_STATE_INPUT_REQUIRED`, which is why every status message carries the phase in its metadata ([spec 7.2](../spec/v0.1/mem2a.md#72-phase)).
+A terminal task's state never changes again, and A2A refuses new messages to it with `-32004`. (Mem2A makes one exception, for what memory serves: if a principal loses access to something in a finished task's dossier, memory replaces that dossier with a new version ([spec 10.3](../spec/v0.1/mem2a.md#10-identity-and-permissions)).) Two Mem2A phases share `TASK_STATE_INPUT_REQUIRED`, which is why every status message carries the phase in its metadata ([spec 7.2](../spec/v0.1/mem2a.md#72-phase)).
 
-Artifacts (A2A §4.1.7) are a task's outputs, each with an `artifactId`, a `name` and parts. A server can replace an artifact by sending it again with the same `artifactId`. Mem2A keeps the dossier in an artifact called `dossier` and replaces it whole when it changes; the receipt goes in one called `receipt`.
+Artifacts (A2A §4.1.7) are a task's outputs, each with an `artifactId`, a `name` and parts. A server can replace an artifact by sending it again with the same `artifactId`. The event that carries it has two flags for artifacts sent in pieces: `append` (add these parts to the artifact) and `lastChunk` (this is the last piece). Mem2A always sends whole artifacts, with `append` false and `lastChunk` true. It keeps the dossier in an artifact called `dossier` and replaces it whole when it changes; the receipt goes in one called `receipt`.
 
 ## Anatomy of a Mem2A task
 
@@ -137,7 +142,7 @@ Here is memory's answer to Tom's intent, from [example 02](../spec/v0.1/examples
             { "text": "Hold the quote: legal paused Acme pricing on Friday. I'll call back if that changes." }
           ],
           "metadata": {
-            "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit",   // Mem2A: act, then commit
+            "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit",   // Mem2A: memory is watching
             "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-tom-001"    // the message this answers
           },
           "extensions": ["https://w3id.org/mem2a/v0.1"]
@@ -171,15 +176,15 @@ Here is memory's answer to Tom's intent, from [example 02](../spec/v0.1/examples
 }
 ```
 
-Read it as: the task is open and waiting for Tom's agent (`INPUT_REQUIRED`, `awaiting-commit`). The rules for this action are in dossier 12, and memory will send a new version if any of those items change.
+Read it as: the task is open and waiting for Tom's agent (`INPUT_REQUIRED`, `awaiting-commit`). The rules for this action are in dossier 12, and right now they say to hold. Memory will send a new version if any of those items change; Tom's agent acts when the dossier allows it, then commits.
 
 ## Hearing about changes
 
-A2A has three ways for a client to follow a task (A2A §3.1, §4.3). Mem2A uses all three.
+A2A has three ways for a client to follow a task (A2A §3.5). Mem2A uses all three.
 
 **Polling.** Call `GetTask` whenever you like. Mem2A requires it, or an equivalent stream, right before acting, so the agent acts on the current dossier ([spec 8.3.7](../spec/v0.1/mem2a.md#83-listen)).
 
-**Streaming.** `SubscribeToTask` (and `SendStreamingMessage`) answer with [server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html): a long-lived HTTP response in which each event is a `data:` line. In the JSON-RPC binding, each line holds a JSON-RPC response whose `result` is one stream event (A2A §3.2.3):
+**Streaming.** `SubscribeToTask` (and `SendStreamingMessage`) answer with [server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html): a long-lived HTTP response in which each event is a `data:` line. In the JSON-RPC binding, each line holds a JSON-RPC response whose `result` is one stream event (A2A §9.4.2, §3.2.3):
 
 | Event | Carries |
 | --- | --- |
@@ -199,9 +204,9 @@ A2A says a stream ends when the task reaches a terminal state (A2A §3.1.6), but
 }
 ```
 
-It can send one in the first `SendMessage`, as `params.configuration.taskPushNotificationConfig`, or add one later with `CreateTaskPushNotificationConfig`. The server then POSTs each event to the URL, with the same bodies as a stream (`statusUpdate`, `artifactUpdate` and so on) and the header `Authorization: Bearer <the secret>` (A2A §4.3.3). A2A delivers at least once, so a webhook can see the same event twice. That, and the chance of forged or lost calls, is why Mem2A treats every push as a signal to read the task, never as the dossier itself ([ADR 0008](../adrs/0008-updates-are-signals.md)). A Mem2A memory also delivers only to webhook origins the company registered for the agent ([spec 8.3.10](../spec/v0.1/mem2a.md#83-listen)).
+It can send one in the first `SendMessage`, as `params.configuration.taskPushNotificationConfig`, or add one later with `CreateTaskPushNotificationConfig`. The server then POSTs each event to the URL as a bare stream event, such as `{"statusUpdate": {...}}`, without the JSON-RPC envelope that a stream wraps around it. The body's type is `application/a2a+json`, and the request carries the header `Authorization: Bearer <the secret>`, so the client can tell the server's calls from anyone else's (A2A §4.3.3). Deliveries can be retried, so a webhook can see the same event twice, and a server may give up on a webhook that keeps failing (A2A §13.2). That, and the chance of forged calls, is why Mem2A treats every push as a signal to read the task, never as the dossier itself ([ADR 0008](../adrs/0008-updates-are-signals.md)). A Mem2A memory also delivers only to webhook origins the company registered for the agent ([spec 8.3.10](../spec/v0.1/mem2a.md#83-listen)).
 
-**Blocking.** By default, `SendMessage` waits until the task is interrupted or terminal, then returns it (A2A §3.2.2; set `configuration.returnImmediately` to return at once). Memory always emits the dossier artifact before the status that says `awaiting-commit`, so the blocking response already contains the dossier ([spec 8.1.4](../spec/v0.1/mem2a.md#81-negotiate)).
+**One more thing: blocking.** By default, `SendMessage` waits until the task is interrupted or terminal, then returns it (A2A §3.2.2; set `configuration.returnImmediately` to return at once). Memory always emits the dossier artifact before the status that says `awaiting-commit`, so the blocking response already contains the dossier ([spec 8.1.4](../spec/v0.1/mem2a.md#81-negotiate)).
 
 ## Extensions and activation
 
@@ -219,6 +224,7 @@ Errors at the A2A level come back as JSON-RPC errors (A2A §5.4):
 
 | Code | A2A error | When a Mem2A agent sees it |
 | --- | --- | --- |
+| HTTP `401` | Authentication failed | The token is missing, invalid or expired. A2A leaves the JSON-RPC code to the server, so check the HTTP status; the sandbox answers `-32000`, with `"id": null`. |
 | `-32700`, `-32600` | Parse error, invalid request | The body isn't valid JSON-RPC. |
 | `-32601` | Method not found | A typo in the method name. |
 | `-32602` | Invalid params | The params don't match A2A's shapes, or memory refused a push notification config. |

@@ -6,10 +6,12 @@ You'll play Tom's sales agent: negotiate before sending Acme a quote, get told t
 
 ## Start a sandbox memory
 
-The sandbox is the [Python reference implementation](../python). You need Python once, to run it; everything after that is plain HTTP.
+The sandbox is the [Python reference implementation](../python). You need Python 3.10 or later once, to run it; everything after that is plain HTTP, with `curl` and [`jq`](https://jqlang.org/).
 
 ```sh
-pip install -e "python[dev]"        # from the repository root
+git clone https://github.com/mem2a/mem2a && cd mem2a
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e "python[dev]"
 mem2a serve --seed acme --dev-admin
 ```
 
@@ -38,7 +40,7 @@ rpc() {  # rpc <token> <json-rpc body>
 }
 ```
 
-The `jq` filters below only trim the output to the interesting parts. Drop them to see whole responses, or compare with the [spec's examples](../spec/v0.1/examples).
+The `jq` filters below trim the output to the interesting parts, and a few steps use `jq` to save ids. Drop the filters to see whole responses, or compare with the [spec's examples](../spec/v0.1/examples).
 
 ## 1. Discover
 
@@ -114,7 +116,7 @@ Prefer callbacks? When you negotiate, put a push notification config in `params`
 }
 ```
 
-Memory then POSTs each of the task's events to that URL, as `application/a2a+json` with the header `Authorization: Bearer <your secret>`, so you can tell its calls from anyone else's. The sandbox sends callbacks only to this machine. A real memory sends them only to the origins your company registered for your agent, and refuses any other URL with `-32602`.
+Memory then POSTs each of the task's events to that URL, as `application/a2a+json` with the header `Authorization: Bearer <your secret>`, so you can tell its calls from anyone else's. Each body is a bare event, such as `{"statusUpdate": {...}}`, without the `result` wrapper that the stream puts around it. The sandbox sends callbacks only to this machine. A real memory sends them only to the origins your company registered for your agent, and refuses any other URL with `-32602`.
 
 ## 4. Change memory
 
@@ -302,6 +304,7 @@ The update lists `f-340` as removed, exactly as it would a retired fact, so it d
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
+| HTTP `401` | Not authenticated | Send `Authorization: Bearer <token>` with a valid token. The sandbox answers with code `-32000` and `"id": null`. |
 | `-32009` | Version not supported | Send `A2A-Version: 1.0`. |
 | `-32008` | Extension required | Send `A2A-Extensions: https://w3id.org/mem2a/v0.1`. |
 | `-32001` | Task not found | Wrong id, or the task belongs to another agent or principal. |
