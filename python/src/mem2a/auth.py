@@ -3,9 +3,9 @@
 
 Memory needs both on every request: the principal decides what memory may
 show (permissions follow the source), and the agent is recorded on claims.
-Plug in your own `Authenticator` (for example one that validates an OAuth
-2.0 token-exchange JWT naming both). `DevTokenAuthenticator` is for tests and
-demos only.
+Plug in your own `Authenticator`, for example one that validates an OAuth 2.0
+Token Exchange JWT whose subject is the principal and whose ``act`` claim
+names the agent. `DevTokenAuthenticator` is for tests and demos only.
 """
 
 from __future__ import annotations
@@ -22,15 +22,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: The shape of a development token.
+DEV_TOKEN_FORMAT = 'dev:<agent>:<principal>[:<groups>]'
+#: A full development token, for the docs and error messages.
+DEV_TOKEN_EXAMPLE = 'dev:sales-assistant:user:tom:group:sales'
+
 
 @dataclass(frozen=True)
 class Identity:
     """An authenticated caller.
 
     Attributes:
-        agent: The acting agent (AgentRef), e.g. ``agent:sales-assistant``.
-        principal: The person or system it acts for, e.g. ``user:tom``.
-        groups: Groups the principal belongs to, e.g. ``group:sales``.
+        agent: The acting agent (an AgentRef), for example ``agent:sales-assistant``.
+        principal: The person or system it acts for, for example ``user:tom``.
+        groups: Groups the principal belongs to, for example ``group:sales``.
     """
 
     agent: str
@@ -43,7 +48,7 @@ class Identity:
         return frozenset({self.principal, *self.groups})
 
     def can_read(self, readers: Iterable[str] | None) -> bool:
-        """``None`` means "everyone in the company"."""
+        """``None`` means everyone in the company; an empty set means nobody."""
         return readers is None or not self.refs.isdisjoint(readers)
 
 
@@ -57,62 +62,65 @@ class Authenticator(Protocol):
     async def authenticate(self, connection: HTTPConnection) -> Identity: ...
 
 
-_NAME = re.compile(r'^[A-Za-z0-9._@~+-]+$')
+_NAME = r'[A-Za-z0-9._@~+-]+'
+_REF = re.compile(rf'^{_NAME}:{_NAME}$')
+_TOKEN = re.compile(rf'^dev:(?P<agent>{_NAME}):(?P<principal>{_NAME}:{_NAME})(?::(?P<groups>.+))?$')
 
 
 class DevTokenAuthenticator:
     """Accepts unsigned development tokens. NOT FOR PRODUCTION.
 
-    Format: ``Authorization: Bearer dev:<agent>:<principal>[:<group>,<group>...]``
-    where ``<principal>`` is ``<kind>:<id>``, for example::
+    A token has the form ``dev:<agent>:<principal>[:<groups>]``:
 
-        Bearer dev:sales-assistant:user:tom:group:sales,group:legal
+    * ``<agent>`` names the acting agent; memory records it as ``agent:<agent>``.
+    * ``<principal>`` is who the agent acts for, with its kind: ``user:tom``.
+    * ``<groups>``, optional, is a comma-separated list of the principal's
+      groups, each with its kind: ``group:sales,group:legal``.
 
-    names agent ``agent:sales-assistant`` acting for ``user:tom``, a member of
-    ``group:sales`` and ``group:legal``. Bare group names get ``group:``.
-    Anyone can forge these tokens.
+    So ``Authorization: Bearer dev:sales-assistant:user:tom:group:sales`` is
+    agent ``agent:sales-assistant`` acting for ``user:tom``, a member of
+    ``group:sales``. Anyone can forge these tokens.
     """
 
     def __init__(self) -> None:
         logger.warning(
-            'DevTokenAuthenticator is enabled: it trusts UNSIGNED tokens that '
-            'anyone can forge. Use it for tests and demos only, never in '
-            'production.'
+            'DevTokenAuthenticator is enabled: it trusts UNSIGNED tokens that anyone can '
+            'forge. Use it for tests and demos only, never in production.'
         )
 
     async def authenticate(self, connection: HTTPConnection) -> Identity:
         header = connection.headers.get('authorization', '')
         scheme, _, token = header.partition(' ')
         if scheme.lower() != 'bearer' or not token.strip():
-            raise AuthenticationError('Missing bearer token.')
+            raise AuthenticationError(
+                f'Missing bearer token. Send Authorization: Bearer {DEV_TOKEN_EXAMPLE}'
+            )
         return self.parse(token.strip())
 
     @staticmethod
     def parse(token: str) -> Identity:
-        """Parse ``dev:<agent>:<kind>:<id>[:<groups>]`` into an `Identity`."""
-        prefix, _, rest = token.partition(':')
-        agent, _, rest = rest.partition(':')
-        kind, _, rest = rest.partition(':')
-        principal_id, _, group_list = rest.partition(':')
-        if prefix != 'dev' or not all(_NAME.match(part) for part in (agent, kind, principal_id)):
+        """Parse a development token into an `Identity`.
+
+        Raises:
+            AuthenticationError: `token` is not ``dev:<agent>:<principal>[:<groups>]``.
+        """
+        match = _TOKEN.match(token)
+        groups = match['groups'].split(',') if match and match['groups'] else []
+        if match is None or not all(_REF.match(group) for group in groups):
             raise AuthenticationError(
-                'Invalid dev token; expected dev:<agent>:<kind>:<id>[:<groups>].'
+                f'Invalid dev token. Expected {DEV_TOKEN_FORMAT}, where <principal> has a '
+                'kind and <groups> is a comma-separated list, for example '
+                f'{DEV_TOKEN_EXAMPLE} or {DEV_TOKEN_EXAMPLE},group:legal.'
             )
-        groups = set()
-        for group in filter(None, (g.strip() for g in group_list.split(','))):
-            ref = group if ':' in group else f'group:{group}'
-            if not all(_NAME.match(part) for part in ref.split(':', 1)):
-                raise AuthenticationError(f'Invalid group in dev token: {group!r}')
-            groups.add(ref)
         return Identity(
-            agent=f'agent:{agent}',
-            principal=f'{kind}:{principal_id}',
+            agent=f'agent:{match["agent"]}',
+            principal=match['principal'],
             groups=frozenset(groups),
         )
 
     @staticmethod
     def token(agent: str, principal: str, groups: Iterable[str] = ()) -> str:
-        """Build a dev token, e.g. ``token('sales-assistant', 'user:tom', ['group:sales'])``."""
+        """Build a dev token: ``token('sales-assistant', 'user:tom', ['group:sales'])``."""
         agent = agent.removeprefix('agent:')
         suffix = ','.join(groups)
         return f'dev:{agent}:{principal}' + (f':{suffix}' if suffix else '')

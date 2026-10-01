@@ -2,57 +2,58 @@
 """The memory itself: a transport-agnostic, in-memory Mem2A engine.
 
 The engine knows nothing about A2A. The server (`mem2a.server`) calls
-`MemoryEngine.negotiate`, `respond`, `refresh`, `cancel` and `expire`, and
-turns each returned `Reply` into A2A artifacts and one status message.
+`MemoryEngine.negotiate`, `respond`, `refresh`, `cancel`, `expire` and `fail`,
+and turns each returned `Reply` into A2A artifacts and one status message.
 
 How this reference memory decides what goes into a dossier:
 
 * **Facts** are included when they are not retired, their entities intersect
   the intent's entities, and the principal may read *every* source the fact
-  derives from ("permissions follow the source").
-* **Claims** (facts recorded from commits) follow the same rules. In
-  addition, only the committing principal and principals who may read every
-  entity the claim names can see it. Entity reader sets are configured with
-  `set_entity_readers`; an entity with none configured is readable by nobody
-  but the claimant.
+  derives from ("permissions follow the source"). Confirmed facts come
+  first, newest first; claims follow.
+* **Claims** are facts recorded from commits. Besides the claimant, a
+  principal sees a claim only if it may read every entity the claim names
+  (`set_entity_readers`) *and* see every item of the dossier the commit was
+  based on. So an agent can't launder what it read into a claim that more
+  people can see.
 * **Precedent** is included when it is not retired, the principal may read
-  every source, and one of its `Relevance` rules matches (by action,
-  entities, answers given, or a confirmed fact in the same dossier). The
-  matching rule's text becomes the precedent's ``relevance``.
+  every source, and one of its `When` conditions matches the intent (action,
+  entities, answers given, or a confirmed fact in the same dossier).
 * **Constraints** come only from policies people configured (`add_policy`).
-  A policy applies when one of its basis items is a *confirmed* fact or a
-  precedent in the same dossier (so the principal can see its basis), or, for
-  a standing policy, when the intent matches its filters. Claims never
-  produce constraints, so an agent cannot instruct other agents by writing to
-  memory.
-* ``watching`` lists every fact, precedent and constraint id in the dossier.
+  A policy applies when *all* of its basis items are confirmed facts or
+  precedent in the same dossier, or, for a standing policy, when the intent
+  matches its filters. Claims never produce constraints, so an agent cannot
+  instruct other agents by writing to memory.
+* ``watching`` lists exactly the ids of the dossier's items.
+
+Every fact, precedent and constraint has a version, bumped whenever it
+changes. A dossier gets a new version only when its set of items or any
+item's version changes; wording alone never produces an update.
 
 Listening: every change (a fact added, updated, retired, superseded or
 confirmed; a reader set changed; claims recorded) tells the change listeners
-which ``awaiting-commit`` tasks may be affected: those whose intent entities
-intersect the change, or whose dossier watches a changed id. The server then
-calls `refresh` for each at delivery time, which recomputes the dossier with
+which ``awaiting-commit`` tasks may be affected. The server then calls
+`refresh` for each at delivery time, which recomputes the dossier with
 current permissions and returns an update only if the content changed.
 
 Versions are opaque strings. Dossier versions come from one memory-wide
-counter; a fact's version counts its revisions.
-
-The engine is not thread-safe: use it from the server's event loop.
+counter. The engine is not thread-safe: use it from one event loop.
 """
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 import logging
 import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
 from mem2a import models
 from mem2a.auth import Identity
-from mem2a.constants import MEDIA_TYPES, ErrorCode, Phase
+from mem2a.constants import MEDIA_TYPES, OPEN_PHASES, ErrorCode, PayloadKind, Phase
 from mem2a.models import Level, SourceKind
 from mem2a.validation import SchemaValidationError
 
@@ -67,8 +68,19 @@ ChangeListener = Callable[[list[str]], None]
 Summarizer = Callable[
     [Sequence[models.Fact], Sequence[models.Precedent], Sequence[models.Constraint]], str
 ]
+#: Decides whether to record a valid, current commit: returns None to record
+#: it, or a reason to refuse it (error ``commit-refused``). The agent sees the
+#: reason, so it must not reveal anything the principal can't see.
+CommitPolicy = Callable[['TaskRecord', models.Commit], str | None]
 
-P = TypeVar('P', bound=models.Payload)
+# Limits from the schemas (maxItems, maxLength).
+MAX_ID = 256
+MAX_STATEMENT = 4096
+MAX_RULE = 2048
+MAX_ENTITIES = 64
+MAX_SUPERSEDES = 32
+MAX_BASIS = 32
+MAX_UNTIL = 1024
 
 
 def utcnow() -> datetime:
@@ -81,11 +93,8 @@ def _ordered(values: Iterable[str] | None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values or ()))
 
 
-def _intersection(sets: Sequence[tuple[str, ...]]) -> tuple[str, ...]:
-    """Members of every set, in the first set's order."""
-    if not sets:
-        return ()
-    return tuple(ref for ref in sets[0] if all(ref in other for other in sets[1:]))
+def _readers(readers: Iterable[str] | None) -> tuple[str, ...] | None:
+    return None if readers is None else _ordered(readers)
 
 
 def _normalize_answer(text: str) -> str:
@@ -103,6 +112,23 @@ def _plural(kind: str, n: int) -> str:
 def _entity_type(entity: str) -> str:
     """``account:acme`` -> ``account``."""
     return entity.partition(':')[0] if ':' in entity else ''
+
+
+def _timestamp(when: datetime | None) -> float:
+    return when.timestamp() if when else 0.0
+
+
+def _check(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+
+def _check_text(name: str, text: str, limit: int) -> None:
+    _check(0 < len(text) <= limit, f'{name} must have 1 to {limit} characters')
+
+
+def _check_items(name: str, items: Sequence[str], limit: int) -> None:
+    _check(len(items) <= limit, f'At most {limit} {name}, got {len(items)}')
 
 
 # ================================================================ records
@@ -124,56 +150,78 @@ class SourceRecord:
         )
 
 
+@dataclass(frozen=True)
+class CommitOrigin:
+    """How a fact came from a commit: who claimed it, and on what basis."""
+
+    commit_id: str
+    agent: str
+    principal: str
+    at: datetime
+    #: Ids of the facts and precedent in the dossier the commit was based on.
+    context: tuple[str, ...]
+
+
 @dataclass
 class FactRecord:
     id: str
     statement: str
     status: Literal['confirmed', 'claim']
-    #: Every source the fact derives from; the first one is shown as its source.
+    #: Every source the fact derives from; the first is shown as its source.
     sources: tuple[str, ...]
     entities: tuple[str, ...]
     confirmed_by: str | None = None
-    claimed_by: models.Attribution | None = None
-    #: For facts recorded from a commit: the committing principal.
-    claimant: str | None = None
+    #: Set for facts recorded from a commit, and kept once they are confirmed.
+    origin: CommitOrigin | None = None
     observed_at: datetime | None = None
     supersedes: tuple[str, ...] = ()
     evidence: tuple[models.Evidence, ...] = ()
     revision: int = 1
     retired: bool = False
+    retired_note: str | None = None
     superseded_by: str | None = None
 
 
-@dataclass(frozen=True)
-class Relevance:
-    """When a precedent bears on an intent, and why.
+@dataclass(frozen=True, init=False)
+class When:
+    """A condition under which a precedent bears on an intent.
 
     Every filter that is set must match: the intent's action, one of its
     entities, a *confirmed* fact in the same dossier, and all answer ``tags``
-    the task collected. ``text`` becomes the precedent's ``relevance``.
+    the task collected (see `MemoryEngine.add_question`). For example
+    ``When(actions={'send_quote'}, facts={'f-311'})``.
     """
 
-    text: str
-    actions: frozenset[str] = frozenset()
-    entities: frozenset[str] = frozenset()
-    facts: frozenset[str] = frozenset()
-    tags: frozenset[str] = frozenset()
+    actions: frozenset[str]
+    entities: frozenset[str]
+    facts: frozenset[str]
+    tags: frozenset[str]
 
-    def __post_init__(self) -> None:
-        # Accept any iterable of strings for the filters.
-        for name in ('actions', 'entities', 'facts', 'tags'):
-            object.__setattr__(self, name, frozenset(getattr(self, name)))
+    def __init__(
+        self,
+        *,
+        actions: Iterable[str] = (),
+        entities: Iterable[str] = (),
+        facts: Iterable[str] = (),
+        tags: Iterable[str] = (),
+    ) -> None:
+        object.__setattr__(self, 'actions', frozenset(actions))
+        object.__setattr__(self, 'entities', frozenset(entities))
+        object.__setattr__(self, 'facts', frozenset(facts))
+        object.__setattr__(self, 'tags', frozenset(tags))
 
 
 @dataclass
 class PrecedentRecord:
     id: str
     statement: str
+    relevance: str
     sources: tuple[str, ...]
-    relevance: tuple[Relevance, ...]
+    when: tuple[When, ...]
     decided_by: str | None = None
     decided_at: datetime | None = None
     entities: tuple[str, ...] = ()
+    revision: int = 1
     retired: bool = False
 
 
@@ -184,14 +232,15 @@ class PolicyRecord:
     id: str
     statement: str
     level: Level
-    #: Fact or precedent ids; the constraint applies while any one of them is
-    #: a confirmed fact or a precedent in the dossier.
+    #: Fact or precedent ids; the constraint applies while all of them are
+    #: confirmed facts or precedent in the dossier.
     basis: tuple[str, ...] = ()
     #: A standing policy reference, used as the basis when `basis` is empty.
     policy: str | None = None
     actions: frozenset[str] = frozenset()
     entities: frozenset[str] = frozenset()
     until: str | None = None
+    revision: int = 1
     retired: bool = False
 
 
@@ -229,7 +278,7 @@ class RefusalRule:
 class ReviewItem:
     """Something a person should look at, recorded from a commit."""
 
-    kind: Literal['conflict', 'supersede-proposal']
+    kind: Literal['conflict', 'replace-proposal']
     task_id: str
     commit_id: str
     item_id: str
@@ -247,19 +296,21 @@ class TaskRecord:
     context_id: str
     identity: Identity
     created_at: datetime
-    phase: Phase = 'refused'
+    phase: Phase = 'working'
     intent: models.Intent | None = None
     expires_at: datetime | None = None
     #: The open question while the task is in phase ``question``.
     question: QuestionRule | None = None
     answers: dict[str, str] = field(default_factory=dict)
     tags: set[str] = field(default_factory=set)
-    #: The dossier as last produced (what the agent sees, or is about to).
+    #: The current dossier (what the agent has, or is about to get).
     dossier: models.Dossier | None = None
+    #: Every dossier this task was given, by version.
+    dossiers: dict[str, models.Dossier] = field(default_factory=dict)
 
     @property
     def open(self) -> bool:
-        return self.phase in ('question', 'awaiting-commit')
+        return self.phase in OPEN_PHASES
 
 
 @dataclass(frozen=True)
@@ -288,15 +339,16 @@ def default_summary(
     """A deterministic one-line brief. Swap in your own (for example an LLM)."""
     musts = [c for c in constraints if c.level == 'must']
     shoulds = [c for c in constraints if c.level == 'should']
+    claims = [f for f in facts if f.status == 'claim']
     if musts:
         more = f' ({len(musts) - 1} more rule(s) apply.)' if len(musts) > 1 else ''
         text = f'Hold: {musts[0].statement}{more}'
     elif shoulds:
         text = 'Go ahead, with care: ' + ' '.join(c.statement for c in shoulds)
+    elif claims:
+        text = f'Nothing here blocks this. Reported, not yet confirmed: {claims[0].statement}'
     elif facts:
-        latest = facts[0]
-        label = 'Latest (unconfirmed claim)' if latest.status == 'claim' else 'Latest'
-        text = f'Nothing here blocks this. {label}: {latest.statement}'
+        text = f'Nothing here blocks this. Latest: {facts[0].statement}'
     elif precedent:
         text = f'Nothing here blocks this. See precedent: {precedent[0].statement}'
     else:
@@ -310,11 +362,16 @@ class MemoryEngine:
 
     Args:
         watch_timeout: How long a task may stay open without a commit
-            (``None``: forever). Advertised as ``watchTimeoutSeconds``.
+            (``None``: forever). Advertised in the card as ``watchTimeout``.
         clock: Returns the current time (inject a fake one in tests).
         summarize: Writes each dossier's ``summary``.
-        first_version: The first dossier version the memory-wide counter hands
-            out.
+        first_version: The first dossier version the memory-wide counter
+            hands out.
+        max_open_tasks: How many open tasks one principal may have; more are
+            refused with ``limit-exceeded``. None: no limit.
+        commit_policy: May refuse valid, current commits (``commit-refused``),
+            for example to rate-limit an agent. By default every one is
+            recorded.
     """
 
     def __init__(
@@ -324,11 +381,15 @@ class MemoryEngine:
         clock: Callable[[], datetime] = utcnow,
         summarize: Summarizer = default_summary,
         first_version: int = 1,
+        max_open_tasks: int | None = 100,
+        commit_policy: CommitPolicy | None = None,
     ) -> None:
         self.watch_timeout = watch_timeout
         self.clock = clock
         self.summarize = summarize
-        #: Conflicts and supersede proposals from commits, for people to review.
+        self.max_open_tasks = max_open_tasks
+        self.commit_policy = commit_policy
+        #: Conflicts and replace proposals from commits, for people to review.
         self.review_queue: list[ReviewItem] = []
         self._sources: dict[str, SourceRecord] = {}
         self._facts: dict[str, FactRecord] = {}
@@ -343,11 +404,10 @@ class MemoryEngine:
         self._listeners: list[ChangeListener] = []
         self._versions = itertools.count(first_version)
         self._commits = itertools.count(1)
-        self._next_fact = 1
 
     # ------------------------------------------------------------ listeners
     def on_change(self, listener: ChangeListener) -> Callable[[], None]:
-        """Call `listener` with affected task ids after every change.
+        """Call `listener` with the affected task ids after every change.
 
         Returns a function that removes the listener.
         """
@@ -366,36 +426,34 @@ class MemoryEngine:
         readers: Iterable[str] | None = None,
     ) -> SourceRecord:
         """Register a source. `readers` None means everyone may read it."""
-        record = SourceRecord(
-            ref, kind, title, url, at, None if readers is None else _ordered(readers)
+        _check(ref not in self._sources, f'Source {ref} already exists')
+        _check(
+            kind != 'agent-commit' and not ref.startswith('commit:'),
+            'agent-commit sources are created by commits, not added by hand',
         )
+        _check(url is None or url.startswith('https://'), f'Source URLs must be https: {url}')
+        record = SourceRecord(ref, kind, title, url, at, _readers(readers))
         self._sources[ref] = record
         return record
 
-    def set_source_readers(self, ref: str, readers: Iterable[str] | None) -> None:
-        """Change who may read a source. Affected dossiers are re-checked."""
-        self._sources[ref].readers = None if readers is None else _ordered(readers)
-        items: list[FactRecord | PrecedentRecord] = [
-            *(f for f in self._facts.values() if ref in f.sources),
-            *(p for p in self._precedent.values() if ref in p.sources),
-        ]
-        for item in items:
-            self._notes.pop(item.id, None)  # never explain an access change
-        self._changed({item.id for item in items}, {e for item in items for e in item.entities})
+    def set_source_readers(self, ref: str, readers: Iterable[str] | None) -> list[str]:
+        """Change who may read a source. Returns the tasks re-checked."""
+        self._sources[ref].readers = _readers(readers)
+        direct = {item.id for item in self._items() if ref in item.sources}
+        return self._access_changed(direct | self._claims_resting_on(direct))
 
-    def set_entity_readers(self, entity: str, readers: Iterable[str] | None) -> None:
+    def set_entity_readers(self, entity: str, readers: Iterable[str] | None) -> list[str]:
         """Who, besides the claimant, may see claims naming `entity`.
 
-        Applies to existing claims too; affected dossiers are re-checked.
+        None: nobody else. Applies to existing claims too. Returns the tasks
+        re-checked.
         """
         if readers is None:
             self._entity_readers.pop(entity, None)
         else:
             self._entity_readers[entity] = _ordered(readers)
-        ids = {f.id for f in self._facts.values() if f.claimant and entity in f.entities}
-        for item_id in ids:
-            self._notes.pop(item_id, None)
-        self._changed(ids, {entity})
+        naming = {f.id for f in self._facts.values() if f.origin and entity in f.entities}
+        return self._access_changed(naming | self._claims_resting_on(naming))
 
     def restrict_action(self, action: str, to: Iterable[str] | None) -> None:
         """Only principals in `to` (principals or groups) may negotiate `action`.
@@ -420,15 +478,15 @@ class MemoryEngine:
         observed_at: datetime | None = None,
         supersedes: Iterable[str] = (),
         note: str | None = None,
+        version: int = 1,
     ) -> FactRecord:
-        """Add a confirmed fact, retiring the facts it `supersedes`.
+        """Add a confirmed fact, retiring the confirmed facts it `supersedes`.
 
         Register its sources (`source` and `derived_from`) first. `note` is a
         plain sentence used as the update summary for principals who can see
-        the new fact, for example ``'Legal cleared Acme pricing.'``.
+        the new fact, for example ``'Legal cleared Acme pricing.'``. `version`
+        is the fact's first version (use it when importing existing facts).
         """
-        if fact_id in self._facts:
-            raise ValueError(f'Fact {fact_id} already exists')
         record = FactRecord(
             id=fact_id,
             statement=statement,
@@ -438,17 +496,26 @@ class MemoryEngine:
             confirmed_by=confirmed_by,
             observed_at=observed_at,
             supersedes=_ordered(supersedes),
+            revision=version,
         )
-        self._require_sources(record.sources)
-        changed_entities = set(record.entities)
+        self._check_new_item(fact_id, statement, record.sources, version=version)
+        _check_items('entities', record.entities, MAX_ENTITIES)
+        _check_items('superseded facts', record.supersedes, MAX_SUPERSEDES)
+        for old_id in record.supersedes:
+            old = self._facts.get(old_id)
+            _check(
+                old is not None and old.status == 'confirmed',
+                f'{old_id} is not a confirmed fact; only confirmed facts can be superseded',
+            )
+
+        changed = set(record.entities)
         for old_id in record.supersedes:
             old = self._facts[old_id]
-            old.retired = True
-            old.superseded_by = fact_id
+            old.retired, old.superseded_by = True, fact_id
             self._notes.pop(old_id, None)
-            changed_entities |= set(old.entities)
-        self._store_fact(record)
-        self._changed({fact_id, *record.supersedes}, changed_entities, notes={fact_id: note})
+            changed |= set(old.entities)
+        self._facts[fact_id] = record
+        self._changed({fact_id, *record.supersedes}, changed, notes={fact_id: note})
         return record
 
     def update_fact(
@@ -461,36 +528,42 @@ class MemoryEngine:
     ) -> FactRecord:
         """Revise a fact; its version goes up by one."""
         record = self._facts[fact_id]
-        before = set(record.entities)
+        new_entities = record.entities if entities is None else _ordered(entities)
         if statement is not None:
-            record.statement = statement
-        if entities is not None:
-            record.entities = _ordered(entities)
+            _check_text('statement', statement, MAX_STATEMENT)
+        _check_items('entities', new_entities, MAX_ENTITIES)
+        before = set(record.entities)
+        record.statement = statement or record.statement
+        record.entities = new_entities
         record.revision += 1
-        self._changed({fact_id}, before | set(record.entities), notes={fact_id: note})
+        self._changed({fact_id}, before | set(new_entities), notes={fact_id: note})
         return record
 
-    def retire_fact(self, fact_id: str) -> None:
-        """The fact no longer holds. Dossiers show it as removed."""
+    def retire_fact(self, fact_id: str, *, note: str | None = None) -> FactRecord:
+        """The fact no longer holds. Dossiers show it as removed.
+
+        `note` is kept for people (and `/dev/state`), never sent to agents:
+        an update must not say why an item was removed, so that retirement
+        and lost access look the same.
+        """
         record = self._facts[fact_id]
-        record.retired = True
+        record.retired, record.retired_note = True, note
         self._notes.pop(fact_id, None)
         self._changed({fact_id}, set(record.entities))
+        return record
 
     def confirm_fact(self, fact_id: str, *, by: str, note: str | None = None) -> FactRecord:
         """A person or system of record stands behind a claim.
 
-        Confirmation is outside the protocol (spec 9.3). The schema forbids
-        ``claimedBy`` on a confirmed fact, so the attribution is dropped; the
-        source (``commit:<id>``) still says where the fact came from, and its
-        visibility does not change.
+        Confirmation is outside the protocol (spec 9.3). The fact's version
+        goes up, it loses ``claimedBy`` (the schema allows only one of
+        ``claimedBy`` and ``confirmedBy``), and it keeps its commit source
+        and who may see it.
         """
         record = self._facts[fact_id]
         if record.status == 'confirmed':
             return record
-        record.status = 'confirmed'
-        record.confirmed_by = by
-        record.claimed_by = None
+        record.status, record.confirmed_by = 'confirmed', by
         record.revision += 1
         note = note or f'{by} confirmed: {record.statement}'
         self._changed({fact_id}, set(record.entities), notes={fact_id: note})
@@ -502,32 +575,59 @@ class MemoryEngine:
         precedent_id: str,
         statement: str,
         *,
+        relevance: str,
         source: str,
-        relevance: Iterable[Relevance],
+        when: Iterable[When],
         decided_by: str | None = None,
         decided_at: datetime | None = None,
         entities: Iterable[str] = (),
         derived_from: Iterable[str] = (),
+        version: int = 1,
     ) -> PrecedentRecord:
-        """Add a precedent, cited when one of its `relevance` rules matches."""
+        """Add a precedent, cited (with `relevance` as the reason) when one of
+        its `when` conditions matches an intent."""
         record = PrecedentRecord(
             id=precedent_id,
             statement=statement,
+            relevance=relevance,
             sources=_ordered([source, *derived_from]),
-            relevance=tuple(relevance),
+            when=tuple(when),
             decided_by=decided_by,
             decided_at=decided_at,
             entities=_ordered(entities),
+            revision=version,
         )
-        if not record.relevance:
-            raise ValueError('A precedent needs at least one Relevance rule')
-        self._require_sources(record.sources)
+        self._check_new_item(precedent_id, statement, record.sources, version=version)
+        _check_text('relevance', relevance, MAX_RULE)
+        _check_items('entities', record.entities, MAX_ENTITIES)
+        _check(bool(record.when), 'A precedent needs at least one When condition')
         self._precedent[precedent_id] = record
         self._changed({precedent_id}, set(record.entities), everyone=True)
         return record
 
+    def update_precedent(
+        self,
+        precedent_id: str,
+        *,
+        statement: str | None = None,
+        relevance: str | None = None,
+        note: str | None = None,
+    ) -> PrecedentRecord:
+        """Revise a precedent; its version goes up by one."""
+        record = self._precedent[precedent_id]
+        if statement is not None:
+            _check_text('statement', statement, MAX_STATEMENT)
+        if relevance is not None:
+            _check_text('relevance', relevance, MAX_RULE)
+        record.statement = statement or record.statement
+        record.relevance = relevance or record.relevance
+        record.revision += 1
+        self._changed({precedent_id}, set(record.entities), notes={precedent_id: note})
+        return record
+
     def retire_precedent(self, precedent_id: str) -> None:
         self._precedent[precedent_id].retired = True
+        self._notes.pop(precedent_id, None)
         self._changed({precedent_id}, set(), everyone=True)
 
     def add_policy(
@@ -541,14 +641,15 @@ class MemoryEngine:
         actions: Iterable[str] = (),
         entities: Iterable[str] = (),
         until: str | None = None,
+        version: int = 1,
     ) -> PolicyRecord:
         """Configure a constraint. Give exactly one of `basis` or `policy`.
 
-        * `basis`: fact or precedent ids. The constraint applies while one of
-          them is a confirmed fact or a precedent in the dossier.
+        * `basis`: fact or precedent ids. The constraint applies while all of
+          them are confirmed facts or precedent in the dossier.
         * `policy`: a standing policy reference, such as
           ``policy:leadership-update-format``, that applies whenever the
-          `actions` / `entities` filters match the intent.
+          `actions` and `entities` filters match the intent.
         """
         record = PolicyRecord(
             id=constraint_id,
@@ -559,15 +660,42 @@ class MemoryEngine:
             actions=frozenset(actions),
             entities=frozenset(entities),
             until=until,
+            revision=version,
         )
-        if bool(record.basis) == bool(record.policy):
-            raise ValueError('Give exactly one of basis= or policy=')
+        self._check_new_item(constraint_id, statement, (), version=version, limit=MAX_RULE)
+        _check(
+            until is None or 0 < len(until) <= MAX_UNTIL,
+            f'until must have 1 to {MAX_UNTIL} characters',
+        )
+        _check(bool(record.basis) != bool(record.policy), 'Give exactly one of basis= or policy=')
+        _check_items('basis items', record.basis, MAX_BASIS)
         self._policies[constraint_id] = record
         self._changed({constraint_id, *record.basis}, set(record.entities), everyone=True)
         return record
 
+    def update_policy(
+        self,
+        constraint_id: str,
+        *,
+        statement: str | None = None,
+        level: Level | None = None,
+        until: str | None = None,
+        note: str | None = None,
+    ) -> PolicyRecord:
+        """Revise a policy; its constraint's version goes up by one."""
+        record = self._policies[constraint_id]
+        if statement is not None:
+            _check_text('statement', statement, MAX_RULE)
+        record.statement = statement or record.statement
+        record.level = level or record.level
+        record.until = until if until is not None else record.until
+        record.revision += 1
+        self._changed({constraint_id}, set(record.entities), notes={constraint_id: note})
+        return record
+
     def retire_policy(self, constraint_id: str) -> None:
         self._policies[constraint_id].retired = True
+        self._notes.pop(constraint_id, None)
         self._changed({constraint_id}, set(), everyone=True)
 
     def add_question(
@@ -585,7 +713,7 @@ class MemoryEngine:
         """Ask `text` before preparing a dossier for matching intents.
 
         `tags` maps answers (compared ignoring case and punctuation) to tags
-        that `Relevance` rules can require.
+        that `When` conditions can require.
         """
         rule = QuestionRule(
             id=question_id,
@@ -623,9 +751,22 @@ class MemoryEngine:
     def fact(self, fact_id: str) -> FactRecord | None:
         return self._facts.get(fact_id)
 
+    def facts(self) -> list[FactRecord]:
+        """Every fact, claims included, retired or not."""
+        return list(self._facts.values())
+
     def claims(self) -> list[FactRecord]:
         """Every fact recorded from a commit, confirmed since or not."""
-        return [f for f in self._facts.values() if f.claimant is not None]
+        return [f for f in self._facts.values() if f.origin is not None]
+
+    def precedents(self) -> list[PrecedentRecord]:
+        return list(self._precedent.values())
+
+    def policies(self) -> list[PolicyRecord]:
+        return list(self._policies.values())
+
+    def sources(self) -> list[SourceRecord]:
+        return list(self._sources.values())
 
     def open_tasks(self) -> list[TaskRecord]:
         return [t for t in self._tasks.values() if t.open]
@@ -639,12 +780,17 @@ class MemoryEngine:
         task = TaskRecord(id=task_id, context_id=context_id, identity=identity, created_at=now)
         self._tasks[task_id] = task
 
-        intent, problem = _read_payload(payloads, models.Intent)
-        if intent is None:
+        kind, data = _single(payloads)
+        if kind != 'intent':
+            reason = _unexpected_count(payloads) or 'A task starts with an intent.'
+            return self._refuse(task, 'unexpected-message', reason, f'Refused: {reason}')
+        try:
+            intent = models.Intent.parse(data)
+        except SchemaValidationError as error:
             return self._refuse(
                 task,
                 'invalid-intent',
-                f'The first message must carry one valid intent: {problem}',
+                'The intent is not valid: ' + '; '.join(error.errors),
                 'Refused: the intent is not valid.',
             )
         if intent.on_behalf_of != identity.principal:
@@ -663,13 +809,25 @@ class MemoryEngine:
                 f'{identity.principal} may not use memory for {intent.action!r}.',
                 f'Refused: {identity.principal} may not use memory for this kind of action.',
             )
+        if self.max_open_tasks is not None:
+            open_tasks = [
+                t for t in self.open_tasks() if t.identity.principal == identity.principal
+            ]
+            if len(open_tasks) >= self.max_open_tasks:
+                return self._refuse(
+                    task,
+                    'limit-exceeded',
+                    f'{identity.principal} already has {len(open_tasks)} open tasks, the most '
+                    'memory allows. Commit or cancel some first.',
+                    'Refused: too many open tasks. Commit or cancel some first.',
+                )
         for rule in self._refusals.values():
             if _matches(intent, rule.actions, rule.entities, rule.entity_types):
                 return self._refuse(task, 'refused', rule.message, f'Refused: {rule.message}')
 
         task.intent = intent
         if self.watch_timeout is not None:
-            task.expires_at = now + self.watch_timeout
+            task.expires_at = now + self.watch_timeout  # questions expire too
         return self._advance(task)
 
     def respond(self, task_id: str, identity: Identity, payloads: Payloads) -> Reply:
@@ -678,18 +836,21 @@ class MemoryEngine:
         if (task.identity.agent, task.identity.principal) != (identity.agent, identity.principal):
             # The A2A layer scopes tasks by owner, so reaching this is a bug.
             raise PermissionError(f'Task {task_id} belongs to another caller')
-        if task.phase == 'question':
-            return self._answer(task, payloads)
-        if task.phase == 'awaiting-commit':
-            return self._commit(task, payloads)
-        raise ValueError(f'Task {task_id} is {task.phase}; it takes no more messages')
+        if not task.open:
+            raise ValueError(f'Task {task_id} is {task.phase}; it takes no more messages')
+        kind, data = _single(payloads)
+        if task.phase == 'question' and kind == 'answer':
+            return self._answer(task, data)
+        if task.phase == 'awaiting-commit' and kind == 'commit':
+            return self._commit(task, data)
+        return self._unexpected(task, _unexpected_count(payloads) or _unexpected_kind(task, kind))
 
     def refresh(self, task_id: str) -> Reply | None:
         """Listen (spec 8.3): recompute an ``awaiting-commit`` dossier now.
 
-        Returns the new dossier and an update if its content changed, else
-        None. Access is checked at this moment, so an item the principal can
-        no longer see shows up as ``removed``, exactly like a retired one.
+        Returns the new dossier and an update if its items changed, else None.
+        Access is checked at this moment, so an item the principal can no
+        longer see shows up as ``removed``, exactly like a retired one.
         """
         task = self._tasks.get(task_id)
         if task is None or task.phase != 'awaiting-commit':
@@ -710,15 +871,18 @@ class MemoryEngine:
         if task is None or not task.open:
             return None
         task.phase = 'canceled'
-        return Reply(phase='canceled', text='Canceled: memory stopped watching this task.')
+        return Reply(
+            phase='canceled',
+            text='Canceled. Memory stopped watching this task and recorded nothing from it.',
+        )
 
     def due_for_expiry(self) -> list[str]:
-        """Open tasks whose watch ran past ``expiresAt``."""
+        """Open tasks, asking or watching, that ran past ``expiresAt``."""
         now = self.clock()
         return [t.id for t in self._tasks.values() if _overdue(t, now)]
 
     def expire(self, task_id: str) -> Reply | None:
-        """End a watch that ran past ``expiresAt`` without a commit."""
+        """End a task that ran past ``expiresAt`` without a commit."""
         task = self._tasks.get(task_id)
         if task is None or not _overdue(task, self.clock()):
             return None
@@ -733,30 +897,105 @@ class MemoryEngine:
             ),
         )
 
+    def fail(self, task_id: str) -> Reply:
+        """Memory hit an internal error on this task: end it (phase ``failed``).
+
+        Says nothing about the error itself; log that on the server.
+        """
+        task = self._tasks.get(task_id)
+        if task is not None:
+            task.phase = 'failed'
+        return Reply(
+            phase='failed',
+            text='Memory hit an internal error, so this task failed. Negotiate again.',
+            error=models.Error(code='internal', message='Internal error.'),
+        )
+
+    def visible_dossier(
+        self, task_id: str, dossier: models.Dossier, viewer: Identity | None = None
+    ) -> models.Dossier:
+        """A stored dossier as the task's principal may see it now.
+
+        For reads (GetTask, ListTasks, stream snapshots) in any task state:
+        drops items the task's principal, or `viewer` (the caller now), can no
+        longer see, then what rested on them (precedent cited because of a
+        dropped fact, constraints whose basis was dropped), and rewrites
+        ``watching`` and the summary to match. Returns `dossier` itself if
+        nothing was dropped. Otherwise the result gets its own version,
+        ``<version>-redacted-<hash>``, derived from what is left, so that a
+        version always names one content (spec 10.3).
+        """
+        task = self._tasks.get(task_id)
+        if task is None or task.intent is None:
+            return dossier
+        viewers = [task.identity] if viewer in (None, task.identity) else [task.identity, viewer]
+        caches: list[dict[str, bool]] = [{} for _ in viewers]
+
+        def sees(item_id: str) -> bool:
+            return all(self._sees(v, item_id, c) for v, c in zip(viewers, caches, strict=True))
+
+        def still_relevant(item_id: str) -> bool:
+            record = self._precedent.get(item_id)
+            return record is not None and any(_relevant(w, task, confirmed) for w in record.when)
+
+        facts = [f for f in dossier.facts if sees(f.id)]
+        confirmed = {f.id for f in facts if f.status == 'confirmed'}
+        precedent = [p for p in dossier.precedent if sees(p.id) and still_relevant(p.id)]
+        kept = {f.id for f in facts} | {p.id for p in precedent}
+        constraints = [
+            c
+            for c in dossier.constraints
+            if all(b in kept or not self._is_item(b) for b in c.basis)
+        ]
+        if (len(facts), len(precedent), len(constraints)) == (
+            len(dossier.facts),
+            len(dossier.precedent),
+            len(dossier.constraints),
+        ):
+            return dossier
+        kept_items = sorted(
+            [(f.id, f.version) for f in facts]
+            + [(p.id, p.version) for p in precedent]
+            + [(c.id, c.version) for c in constraints]
+        )
+        digest = hashlib.sha256(repr(kept_items).encode()).hexdigest()[:12]
+        return dossier.model_copy(
+            update={
+                'version': f'{dossier.version}-redacted-{digest}',
+                'facts': facts,
+                'precedent': precedent,
+                'constraints': constraints,
+                'watching': [
+                    *(f.id for f in facts),
+                    *(p.id for p in precedent),
+                    *(c.id for c in constraints),
+                ],
+                'summary': self.summarize(facts, precedent, constraints),
+            }
+        )
+
     # ------------------------------------------------------ protocol steps
     def _advance(self, task: TaskRecord) -> Reply:
         """Ask the next question, or deliver the first dossier."""
         rule = self._next_question(task)
         if rule is not None:
-            task.phase = 'question'
-            task.question = rule
+            task.phase, task.question = 'question', rule
             return Reply(phase='question', text=rule.prompt or rule.text, question=rule.model())
-        task.phase = 'awaiting-commit'
-        task.question = None
+        task.phase, task.question = 'awaiting-commit', None
         if self.watch_timeout is not None:
             # Spec 8.3.9: the watch runs from the first dossier.
             task.expires_at = self.clock() + self.watch_timeout
-        facts, precedent, constraints = self._compose(task)
-        task.dossier = self._new_dossier(task, facts, precedent, constraints)
-        return Reply(phase='awaiting-commit', text=task.dossier.summary, dossier=task.dossier)
+        dossier = self._new_dossier(task, *self._compose(task))
+        return Reply(phase='awaiting-commit', text=dossier.summary, dossier=dossier)
 
-    def _answer(self, task: TaskRecord, payloads: Payloads) -> Reply:
+    def _answer(self, task: TaskRecord, data: Any) -> Reply:
         question = task.question
         assert question is not None
-        answer, problem = _read_payload(payloads, models.Answer)
-        if answer is None:
+        try:
+            answer = models.Answer.parse(data)
+        except SchemaValidationError as error:
             return self._still_asking(
-                task, 'invalid-answer', f'Expected an answer to {question.id}: {problem}'
+                task, 'invalid-answer', f'Not a valid answer: {"; ".join(error.errors)}'
             )
         if answer.question_id != question.id:
             return self._still_asking(
@@ -769,53 +1008,85 @@ class MemoryEngine:
         task.tags |= question.tags.get(_normalize_answer(answer.text), frozenset())
         return self._advance(task)
 
-    def _commit(self, task: TaskRecord, payloads: Payloads) -> Reply:
-        assert task.dossier is not None
-        commit, problem = _read_payload(payloads, models.Commit)
-        if commit is None:
-            message = f'Not a valid commit: {problem}'
-            return Reply(
-                phase='awaiting-commit',
-                text=_clip(f'Not recorded. {message}', 4096),
-                error=models.Error(code='invalid-commit', message=_clip(message, 2048)),
+    def _commit(self, task: TaskRecord, data: Any) -> Reply:
+        try:
+            commit = models.Commit.parse(data)
+        except SchemaValidationError as error:
+            return self._not_recorded(
+                'invalid-commit', f'Not a valid commit: {"; ".join(error.errors)}'
             )
         # Compare against memory's view now, not only the last dossier sent:
         # an update may still be on its way to the agent.
-        update = self._revise(task)
-        current = task.dossier.version
-        if update is not None or commit.based_on != current:
-            text = (
-                f'Not recorded: your commit is based on dossier {commit.based_on}, '
-                f'but the current version is {current}.'
+        fresh = self._revise(task)
+        current = task.dossier
+        assert current is not None
+        if commit.based_on != current.version:
+            return self._stale(task, commit.based_on, fresh)
+        unknown = [c.id for c in commit.conflicts or () if c.id not in current.watching]
+        if unknown:
+            return self._not_recorded(
+                'invalid-commit',
+                f'Conflicts must name items of dossier {current.version}; not in it: '
+                + ', '.join(unknown),
             )
-            if update is not None:
-                text += f' {update.summary}'
-            return Reply(
-                phase='awaiting-commit',
-                text=text,
-                dossier=task.dossier if update is not None else None,
-                update=update,
-                error=models.Error(
-                    code='stale-dossier',
-                    message=f'Commit is based on dossier {commit.based_on}; the current '
-                    f'version is {current}. Read the current dossier and commit again.',
-                    current_version=current,
-                ),
-            )
+        if self.commit_policy is not None:
+            reason = self.commit_policy(task, commit)
+            if reason:
+                return self._not_recorded('commit-refused', reason)
         return self._record(task, commit)
+
+    def _stale(self, task: TaskRecord, based_on: str, fresh: models.Update | None) -> Reply:
+        """Spec 8.4.3: record nothing; say what changed since `based_on`, if
+        it is a version this task was given."""
+        current = task.dossier
+        assert current is not None
+        previous = task.dossiers.get(based_on)
+        update = self._update(previous, current) if previous is not None else fresh
+        text = (
+            f'Not recorded: your commit is based on dossier {based_on}, but the current '
+            f'version is {current.version}.'
+        )
+        if update is not None:
+            text += f' {update.summary}'
+        return Reply(
+            phase='awaiting-commit',
+            text=text,
+            dossier=current if fresh is not None else None,  # new since the agent's last event
+            update=update,
+            error=models.Error(
+                code='stale-dossier',
+                message=f'Commit is based on dossier {based_on}; the current version is '
+                f'{current.version}. Read the current dossier and commit again.',
+                current_version=current.version,
+            ),
+        )
 
     def _record(self, task: TaskRecord, commit: models.Commit) -> Reply:
         """Record claims (never confirmed), queue conflicts, tell other tasks."""
-        assert task.intent is not None
+        assert task.intent is not None and task.dossier is not None
         now = self.clock()
         identity = task.identity
         commit_id = f'cm-{next(self._commits)}'
         source = f'commit:{commit_id}'
         self._sources[source] = SourceRecord(ref=source, kind='agent-commit', at=now)
+        origin = CommitOrigin(
+            commit_id=commit_id,
+            agent=identity.agent,
+            principal=identity.principal,
+            at=now,
+            context=(*(f.id for f in task.dossier.facts), *(p.id for p in task.dossier.precedent)),
+        )
+
+        def review(kind: Literal['conflict', 'replace-proposal'], item: str, why: str) -> None:
+            self.review_queue.append(
+                ReviewItem(
+                    kind, task.id, commit_id, item, why, identity.agent, identity.principal, now
+                )
+            )
 
         recorded: list[models.RecordedFact] = []
         notes: dict[str, str | None] = {}
-        entities_changed: set[str] = set()
+        entities: set[str] = set()
         for claim in commit.claims:
             record = FactRecord(
                 id=self._new_fact_id(),
@@ -823,63 +1094,38 @@ class MemoryEngine:
                 status='claim',
                 sources=(source,),
                 entities=_ordered(claim.entities or task.intent.entities),
-                claimed_by=models.Attribution(
-                    agent=identity.agent,
-                    on_behalf_of=identity.principal,
-                    at=now,
-                    commit_id=commit_id,
-                ),
-                claimant=identity.principal,
+                origin=origin,
                 evidence=tuple(claim.evidence or ()),
             )
-            self._store_fact(record)
+            self._facts[record.id] = record
             recorded.append(models.RecordedFact(fact_id=record.id, version=str(record.revision)))
-            notes[record.id] = f'{identity.principal} reported: {claim.statement}'
-            entities_changed |= set(record.entities)
-            for old_id in claim.supersedes or ():
-                self.review_queue.append(
-                    ReviewItem(
-                        kind='supersede-proposal',
-                        task_id=task.id,
-                        commit_id=commit_id,
-                        item_id=old_id,
-                        explanation=f'Claim {record.id} says it replaces {old_id}.',
-                        agent=identity.agent,
-                        principal=identity.principal,
-                        at=now,
-                    )
-                )
-        for conflict in commit.conflicts or ():
-            self.review_queue.append(
-                ReviewItem(
-                    kind='conflict',
-                    task_id=task.id,
-                    commit_id=commit_id,
-                    item_id=conflict.id,
-                    explanation=conflict.explanation,
-                    agent=identity.agent,
-                    principal=identity.principal,
-                    at=now,
-                )
+            notes[record.id] = (
+                f'Reported by {identity.principal}, not yet confirmed: {claim.statement}'
             )
+            entities |= set(record.entities)
+            for old_id in claim.replaces or ():
+                # A hint for people only: memory never retires anything for a claim.
+                review('replace-proposal', old_id, f'Claim {record.id} says it replaces {old_id}.')
+        for conflict in commit.conflicts or ():
+            review('conflict', conflict.id, conflict.explanation)
 
         task.phase = 'committed'  # before notifying: this task stops watching
-        self._changed({r.fact_id for r in recorded}, entities_changed, notes=notes)
+        self._changed({r.fact_id for r in recorded}, entities, notes=notes)
 
-        conflicts = len(commit.conflicts or ())
+        conflicts = list(dict.fromkeys(c.id for c in commit.conflicts or ()))
         text = (
             'Recorded as a claim until a person or a system of record confirms it.'
             if len(recorded) == 1
-            else f'Recorded as {len(recorded)} claims until a person or a system of '
-            'record confirms them.'
+            else f'Recorded as {len(recorded)} claims until a person or a system of record '
+            'confirms them.'
         )
         if conflicts:
-            text += f' {conflicts} conflict(s) sent to a person for review.'
+            text += f' {len(conflicts)} conflict(s) sent to a person for review.'
         receipt = models.Receipt(
             commit_id=commit_id,
             based_on=commit.based_on,
             recorded=recorded,
-            conflicts_recorded=conflicts,
+            conflicts=conflicts,
             at=now,
         )
         return Reply(phase='committed', text=text, receipt=receipt)
@@ -893,7 +1139,7 @@ class MemoryEngine:
         )
 
     def _still_asking(self, task: TaskRecord, code: ErrorCode, message: str) -> Reply:
-        """Reject an answer; the task stays in phase ``question``, asking again."""
+        """Reject a message in phase ``question``, asking the question again."""
         assert task.question is not None
         return Reply(
             phase='question',
@@ -902,24 +1148,44 @@ class MemoryEngine:
             error=models.Error(code=code, message=_clip(message, 2048)),
         )
 
+    def _not_recorded(self, code: ErrorCode, message: str) -> Reply:
+        """Reject a commit; the task stays in phase ``awaiting-commit``."""
+        return Reply(
+            phase='awaiting-commit',
+            text=_clip(f'Not recorded: {message}', 4096),
+            error=models.Error(code=code, message=_clip(message, 2048)),
+        )
+
+    def _unexpected(self, task: TaskRecord, message: str) -> Reply:
+        """A message that doesn't fit the task's phase; nothing changes."""
+        if task.phase == 'question':
+            return self._still_asking(task, 'unexpected-message', message)
+        return Reply(
+            phase=task.phase,
+            text=_clip(f'Not accepted: {message}', 4096),
+            error=models.Error(code='unexpected-message', message=_clip(message, 2048)),
+        )
+
     # --------------------------------------------------- dossier building
     def _revise(self, task: TaskRecord) -> models.Update | None:
-        """Recompute the task's dossier. If its items changed, store a new
-        version and return the update describing the change."""
+        """Recompute the task's dossier. If its items or their versions
+        changed, store a new version and return the update."""
         previous = task.dossier
         assert previous is not None
-        facts, precedent, constraints = self._compose(task)
-        if (facts, precedent, constraints) == (
-            previous.facts,
-            previous.precedent,
-            previous.constraints,
+        items = self._compose(task)
+        if _signature(*items) == _signature(
+            previous.facts, previous.precedent, previous.constraints
         ):
             return None
-        task.dossier = self._new_dossier(task, facts, precedent, constraints)
-        changes = _diff(previous, task.dossier)
+        return self._update(previous, self._new_dossier(task, *items))
+
+    def _update(self, old: models.Dossier, new: models.Dossier) -> models.Update | None:
+        changes = _diff(old, new)
+        if not changes:
+            return None
         return models.Update(
-            dossier_version=task.dossier.version,
-            previous_version=previous.version,
+            dossier_version=new.version,
+            previous_version=old.version,
             summary=self._update_summary(changes),
             changes=changes,
         )
@@ -931,7 +1197,7 @@ class MemoryEngine:
         precedent: list[models.Precedent],
         constraints: list[models.Constraint],
     ) -> models.Dossier:
-        return models.Dossier(
+        dossier = models.Dossier(
             version=str(next(self._versions)),
             summary=self.summarize(facts, precedent, constraints),
             facts=facts,
@@ -944,6 +1210,8 @@ class MemoryEngine:
             ],
             expires_at=task.expires_at,
         )
+        task.dossier = task.dossiers[dossier.version] = dossier
+        return dossier
 
     def _compose(
         self, task: TaskRecord
@@ -952,55 +1220,52 @@ class MemoryEngine:
         intent, identity = task.intent, task.identity
         assert intent is not None
         wanted = set(intent.entities)
+        seen: dict[str, bool] = {}
 
         facts = [
             f
             for f in self._facts.values()
-            if not f.retired and not wanted.isdisjoint(f.entities) and self._visible(identity, f)
+            if not f.retired
+            and not wanted.isdisjoint(f.entities)
+            and self._sees(identity, f.id, seen)
         ]
-        facts.sort(key=lambda f: (-self._when(f), f.id))  # newest first, undated last
+        # Confirmed facts first, then claims; each newest first, undated last.
+        facts.sort(key=lambda f: (f.status == 'claim', -self._when(f), f.id))
         # Relevance and constraints use only what this principal can see
         # (spec 11.5), and never claims (spec 9.4).
         confirmed = {f.id for f in facts if f.status == 'confirmed'}
-
-        precedent: list[tuple[PrecedentRecord, Relevance]] = []
-        for p in self._precedent.values():
-            if p.retired or not self._visible(identity, p):
-                continue
-            rule = next((r for r in p.relevance if _relevant(r, task, confirmed)), None)
-            if rule is not None:
-                precedent.append((p, rule))
-        precedent.sort(key=lambda pr: (-_timestamp(pr[0].decided_at), pr[0].id))
-
-        bases = confirmed | {p.id for p, _ in precedent}
-        constraints: list[models.Constraint] = []
-        for policy in self._policies.values():
-            if policy.retired or not _matches(intent, policy.actions, policy.entities):
-                continue
-            if policy.basis:
-                basis = [b for b in policy.basis if b in bases]
-                if not basis:
-                    continue
-            else:
-                assert policy.policy is not None
-                basis = [policy.policy]
-            constraints.append(
-                models.Constraint(
-                    id=policy.id,
-                    statement=policy.statement,
-                    level=policy.level,
-                    basis=basis,
-                    until=policy.until,
-                )
-            )
+        precedent = [
+            p
+            for p in self._precedent.values()
+            if not p.retired
+            and self._sees(identity, p.id, seen)
+            and any(_relevant(w, task, confirmed) for w in p.when)
+        ]
+        precedent.sort(key=lambda p: (-_timestamp(p.decided_at), p.id))
+        bases = confirmed | {p.id for p in precedent}
+        constraints = [
+            self._constraint_model(p)
+            for p in self._policies.values()
+            if not p.retired
+            and _matches(intent, p.actions, p.entities)
+            and (p.policy is not None or set(p.basis) <= bases)
+        ]
         constraints.sort(key=lambda c: (c.level != 'must', c.id))
         return (
             [self._fact_model(f) for f in facts],
-            [self._precedent_model(p, rule) for p, rule in precedent],
+            [self._precedent_model(p) for p in precedent],
             constraints,
         )
 
     def _fact_model(self, f: FactRecord) -> models.Fact:
+        claimed_by = None
+        if f.status == 'claim' and f.origin is not None:
+            claimed_by = models.Attribution(
+                agent=f.origin.agent,
+                on_behalf_of=f.origin.principal,
+                at=f.origin.at,
+                commit_id=f.origin.commit_id,
+            )
         return models.Fact(
             id=f.id,
             version=str(f.revision),
@@ -1008,50 +1273,84 @@ class MemoryEngine:
             status=f.status,
             source=self._sources[f.sources[0]].model(),
             confirmed_by=f.confirmed_by,
-            claimed_by=f.claimed_by,
+            claimed_by=claimed_by,
             entities=list(f.entities) or None,
+            evidence=list(f.evidence) or None,
             observed_at=f.observed_at,
             supersedes=list(f.supersedes) or None,
-            visibility=self._visibility(f),
-            metadata={'evidence': [e.dump() for e in f.evidence]} if f.evidence else None,
         )
 
-    def _precedent_model(self, p: PrecedentRecord, rule: Relevance) -> models.Precedent:
+    def _precedent_model(self, p: PrecedentRecord) -> models.Precedent:
         return models.Precedent(
             id=p.id,
+            version=str(p.revision),
             statement=p.statement,
-            relevance=rule.text,
+            relevance=p.relevance,
             source=self._sources[p.sources[0]].model(),
             decided_by=p.decided_by,
             decided_at=p.decided_at,
             entities=list(p.entities) or None,
         )
 
+    def _constraint_model(self, p: PolicyRecord) -> models.Constraint:
+        return models.Constraint(
+            id=p.id,
+            version=str(p.revision),
+            statement=p.statement,
+            level=p.level,
+            basis=list(p.basis) if p.basis else [str(p.policy)],
+            until=p.until,
+        )
+
     def _when(self, f: FactRecord) -> float:
-        claimed_at = f.claimed_by.at if f.claimed_by else None
+        claimed_at = f.origin.at if f.origin else None
         return _timestamp(f.observed_at or claimed_at or self._sources[f.sources[0]].at)
 
     # ---------------------------------------------------------- permissions
-    def _visible(self, identity: Identity, item: FactRecord | PrecedentRecord) -> bool:
-        """Spec 10.3 and 10.5: the principal may read every source, and, for
-        a claim, is its claimant or may read every entity it names."""
-        if not all(identity.can_read(self._sources[s].readers) for s in item.sources):
-            return False
-        if isinstance(item, FactRecord) and item.claimant not in (None, identity.principal):
-            return all(identity.can_read(self._entity_readers.get(e, ())) for e in item.entities)
-        return True
+    def _sees(self, identity: Identity, item_id: str, cache: dict[str, bool]) -> bool:
+        """May `identity` see a fact or precedent now? (Spec 10.3 and 10.5.)
 
-    def _visibility(self, f: FactRecord) -> list[str] | None:
-        """Informational: refs in every restricted reader set (None if unrestricted)."""
-        restricted = [
-            readers for s in f.sources if (readers := self._sources[s].readers) is not None
-        ]
-        if f.claimant is not None:
-            entity_sets = [self._entity_readers.get(e, ()) for e in f.entities]
-            restricted.append((f.claimant, *_intersection(entity_sets)))
-        if not restricted:
-            return None
-        return list(_intersection(restricted)) or None
+        It must be able to read every source the item derives from. A claim
+        is also visible only to its claimant, or to principals who may read
+        every entity it names and see every item of the dossier its commit
+        was based on. Memoized in `cache` for one computation.
+        """
+        if item_id in cache:
+            return cache[item_id]
+        cache[item_id] = False  # fail closed if a claim ever rested on itself
+        item: FactRecord | PrecedentRecord | None = self._facts.get(item_id)
+        if item is None:
+            item = self._precedent.get(item_id)
+        visible = item is not None and all(
+            identity.can_read(self._sources[s].readers) for s in item.sources
+        )
+        origin = item.origin if isinstance(item, FactRecord) else None
+        if visible and origin is not None and origin.principal != identity.principal:
+            assert item is not None
+            visible = all(
+                identity.can_read(self._entity_readers.get(e, ())) for e in item.entities
+            ) and all(self._sees(identity, i, cache) for i in origin.context)
+        cache[item_id] = visible
+        return visible
+
+    def _claims_resting_on(self, ids: set[str]) -> set[str]:
+        """Claims whose visibility depends on any of `ids`, transitively."""
+        found: set[str] = set()
+        frontier = set(ids)
+        while frontier:
+            frontier = {
+                f.id
+                for f in self._facts.values()
+                if f.origin and f.id not in found and not frontier.isdisjoint(f.origin.context)
+            }
+            found |= frontier
+        return found
+
+    def _access_changed(self, ids: set[str]) -> list[str]:
+        for item_id in ids:
+            self._notes.pop(item_id, None)  # never explain an access change
+        entities = {e for item in self._items() if item.id in ids for e in item.entities}
+        return self._changed(ids, entities)
 
     # --------------------------------------------------------------- rules
     def _next_question(self, task: TaskRecord) -> QuestionRule | None:
@@ -1064,21 +1363,44 @@ class MemoryEngine:
         return None
 
     # -------------------------------------------------------------- helpers
-    def _require_sources(self, refs: Iterable[str]) -> None:
-        missing = [r for r in refs if r not in self._sources]
-        if missing:
-            raise KeyError(f'Unknown source(s): {", ".join(missing)}; call add_source first')
+    def _items(self) -> Iterable[FactRecord | PrecedentRecord]:
+        yield from self._facts.values()
+        yield from self._precedent.values()
 
-    def _store_fact(self, record: FactRecord) -> None:
-        self._facts[record.id] = record
-        match = re.fullmatch(r'f-(\d+)', record.id)
-        if match:
-            self._next_fact = max(self._next_fact, int(match.group(1)) + 1)
+    def _is_item(self, item_id: str) -> bool:
+        return item_id in self._facts or item_id in self._precedent
+
+    def _check_new_item(
+        self,
+        item_id: str,
+        statement: str,
+        sources: Sequence[str],
+        *,
+        version: int,
+        limit: int = MAX_STATEMENT,
+    ) -> None:
+        _check(0 < len(item_id) <= MAX_ID, f'Ids must have 1 to {MAX_ID} characters')
+        _check(version >= 1, 'Versions start at 1')
+        _check(
+            item_id not in self._facts
+            and item_id not in self._precedent
+            and item_id not in self._policies,
+            f'{item_id} is already in use: facts, precedent and constraints share one set of ids',
+        )
+        _check_text('statement', statement, limit)
+        missing = [ref for ref in sources if ref not in self._sources]
+        _check(not missing, f'Unknown source(s): {", ".join(missing)}; call add_source first')
+        _check(
+            all(self._sources[ref].kind != 'agent-commit' for ref in sources),
+            'Only commits create facts from agent-commit sources',
+        )
 
     def _new_fact_id(self) -> str:
-        while f'f-{self._next_fact}' in self._facts:
-            self._next_fact += 1
-        return f'f-{self._next_fact}'
+        numbers = [int(m.group(1)) for i in self._facts if (m := re.fullmatch(r'f-(\d+)', i))]
+        n = max(numbers, default=0) + 1
+        while f'f-{n}' in self._precedent or f'f-{n}' in self._policies:
+            n += 1
+        return f'f-{n}'
 
     def _update_summary(self, changes: Sequence[models.Change]) -> str:
         """Notes attached to items the principal can now see; otherwise a
@@ -1130,22 +1452,26 @@ class MemoryEngine:
 
 
 # ============================================================== functions
-def _read_payload(payloads: Payloads, model: type[P]) -> tuple[P | None, str | None]:
-    """The single Mem2A payload of an agent message, parsed as `model`.
-
-    Returns (payload, None) or (None, what is wrong). Spec 7.1.1: exactly
-    one Mem2A payload per agent message.
-    """
+def _single(payloads: Payloads) -> tuple[PayloadKind | None, Any]:
+    """The kind and data of a message's one Mem2A payload, or (None, None)."""
     if len(payloads) != 1:
-        return None, f'expected exactly one Mem2A payload, got {len(payloads)}'
+        return None, None
     media_type, data = payloads[0]
-    kind = MEDIA_TYPES.get(media_type)
-    if kind != model.schema_name:
-        return None, f'expected a {model.schema_name}, got {kind or media_type}'
-    try:
-        return model.parse(data), None
-    except SchemaValidationError as error:
-        return None, '; '.join(error.errors)
+    return MEDIA_TYPES.get(media_type), data
+
+
+def _unexpected_count(payloads: Payloads) -> str | None:
+    if len(payloads) == 1:
+        return None
+    return f'Send exactly one Mem2A payload per message; this one has {len(payloads)}.'
+
+
+def _unexpected_kind(task: TaskRecord, kind: PayloadKind | None) -> str:
+    if kind == 'intent':
+        return 'This task already has an intent. Start a new task for a new action.'
+    if task.phase == 'question' and task.question is not None:
+        return f'Memory is waiting for an answer to question {task.question.id}.'
+    return 'Memory is waiting for a commit on this task (or for the task to be canceled).'
 
 
 def _matches(
@@ -1162,12 +1488,12 @@ def _matches(
     return not entity_types or any(_entity_type(e) in entity_types for e in intent.entities)
 
 
-def _relevant(rule: Relevance, task: TaskRecord, confirmed: set[str]) -> bool:
+def _relevant(when: When, task: TaskRecord, confirmed: set[str]) -> bool:
     assert task.intent is not None
     return (
-        _matches(task.intent, rule.actions, rule.entities)
-        and (not rule.facts or not rule.facts.isdisjoint(confirmed))
-        and rule.tags <= task.tags
+        _matches(task.intent, when.actions, when.entities)
+        and (not when.facts or not when.facts.isdisjoint(confirmed))
+        and when.tags <= task.tags
     )
 
 
@@ -1175,13 +1501,19 @@ def _overdue(task: TaskRecord, now: datetime) -> bool:
     return task.open and task.expires_at is not None and task.expires_at <= now
 
 
-def _timestamp(when: datetime | None) -> float:
-    return when.timestamp() if when else 0.0
+Item = models.Fact | models.Precedent | models.Constraint
+
+
+def _signature(
+    facts: Sequence[Item], precedent: Sequence[Item], constraints: Sequence[Item]
+) -> frozenset[tuple[str, str]]:
+    """What a dossier version stands for: its items' ids and versions."""
+    return frozenset((item.id, item.version) for item in (*facts, *precedent, *constraints))
 
 
 def _diff(old: models.Dossier, new: models.Dossier) -> list[models.Change]:
     """Changes by kind (facts, constraints, precedent); within each kind:
-    added, updated, removed, in dossier order."""
+    added, updated (new version), removed, in dossier order."""
     return [
         *_diff_items('fact', old.facts, new.facts),
         *_diff_items('constraint', old.constraints, new.constraints),
@@ -1190,17 +1522,16 @@ def _diff(old: models.Dossier, new: models.Dossier) -> list[models.Change]:
 
 
 def _diff_items(
-    kind: models.ItemKind,
-    old: Sequence[models.Fact | models.Precedent | models.Constraint],
-    new: Sequence[models.Fact | models.Precedent | models.Constraint],
+    kind: models.ItemKind, old: Sequence[Item], new: Sequence[Item]
 ) -> list[models.Change]:
-    before = {item.id: item for item in old}
-    after = {item.id: item for item in new}
-    added = [i for i in after if i not in before]
-    updated = [i for i, item in after.items() if i in before and before[i] != item]
-    removed = [i for i in before if i not in after]
+    before = {item.id: item.version for item in old}
+    after = {item.id: item.version for item in new}
     return [
-        *(models.Change(id=i, kind=kind, change='added') for i in added),
-        *(models.Change(id=i, kind=kind, change='updated') for i in updated),
-        *(models.Change(id=i, kind=kind, change='removed') for i in removed),
+        *(models.Change(id=i, kind=kind, change='added') for i in after if i not in before),
+        *(
+            models.Change(id=i, kind=kind, change='updated')
+            for i, version in after.items()
+            if i in before and before[i] != version
+        ),
+        *(models.Change(id=i, kind=kind, change='removed') for i in before if i not in after),
     ]

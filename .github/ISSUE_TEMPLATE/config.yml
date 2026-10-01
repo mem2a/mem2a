@@ -3,3 +3,6 @@ contact_links:
   - name: Report a security problem
     url: https://github.com/mem2a/mem2a/security/advisories/new
     about: Please report security problems privately, not as issues.
+  - name: Read the specification
+    url: https://github.com/mem2a/mem2a/blob/main/spec/v0.1/mem2a.md
+    about: The rules, with links to every open question.

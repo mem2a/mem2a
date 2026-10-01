@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Development tokens: ``Bearer dev:<agent>:<principal>[:<group>,...]``."""
+"""Development tokens: ``dev:<agent>:<principal>[:<groups>]``."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from mem2a.auth import AuthenticationError, DevTokenAuthenticator, Identity
 
 
 def test_parse_agent_principal_and_groups() -> None:
-    identity = DevTokenAuthenticator.parse('dev:sales-assistant:user:tom:group:sales,legal')
+    identity = DevTokenAuthenticator.parse('dev:sales-assistant:user:tom:group:sales,group:legal')
     assert identity == Identity(
         'agent:sales-assistant', 'user:tom', frozenset({'group:sales', 'group:legal'})
     )
@@ -24,11 +24,23 @@ def test_token_round_trip() -> None:
 
 @pytest.mark.parametrize(
     'token',
-    ['', 'dev:', 'dev:bot', 'dev:bot:tom', 'prod:bot:user:tom', 'dev:bot:user:', 'dev:b t:user:x'],
+    [
+        '',
+        'dev:',
+        'dev:bot',
+        'dev:bot:tom',  # the principal needs its kind
+        'prod:bot:user:tom',
+        'dev:bot:user:',
+        'dev:b t:user:x',
+        'dev:bot:user:tom:sales',  # so do groups
+        'dev:bot:user:tom:group:sales,',
+    ],
 )
 def test_invalid_tokens(token: str) -> None:
-    with pytest.raises(AuthenticationError):
+    with pytest.raises(AuthenticationError) as caught:
         DevTokenAuthenticator.parse(token)
+    assert 'dev:<agent>:<principal>[:<groups>]' in str(caught.value)
+    assert 'dev:sales-assistant:user:tom:group:sales' in str(caught.value)
 
 
 def test_can_read() -> None:

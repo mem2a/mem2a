@@ -1,0 +1,15 @@
+name: Question
+description: Ask anything about Mem2A.
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything that helps us answer
+      description: What you're building, or what you've read so far. Optional.

@@ -2,16 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://w3id.org/mem2a/v0.1/schemas/common.schema.json",
   "title": "Mem2A v0.1 shared definitions",
-  "description": "Types shared by the Mem2A payload schemas. Not a payload on its own.",
+  "description": "Types shared by the Mem2A payload schemas. Not a payload on its own. Mem2A payloads contain no JSON numbers: A2A carries data parts as protobuf Values, which turn integers into doubles.",
   "$defs": {
     "Id": {
-      "description": "An identifier assigned by whoever created the object. Unique within its kind for a given memory.",
+      "description": "An identifier assigned by whoever created the object. Fact, precedent and constraint ids are unique across all three kinds within a memory.",
       "type": "string",
       "minLength": 1,
       "maxLength": 256
     },
     "Version": {
-      "description": "An opaque version token. Compare for equality only; never parse, order or do arithmetic on it. Always a string, because A2A carries data parts as protobuf Values, which turn JSON integers into doubles.",
+      "description": "An opaque version token. Compare for equality only; never parse, order or do arithmetic on it.",
       "type": "string",
       "minLength": 1,
       "maxLength": 128
@@ -39,8 +39,15 @@
       "type": "string",
       "format": "date-time"
     },
+    "HttpsUrl": {
+      "description": "An https URL, for people to follow. Memory MUST NOT fetch it on an agent's behalf.",
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "maxLength": 2048
+    },
     "Metadata": {
-      "description": "Implementation-specific data. Receivers MUST ignore keys they do not understand.",
+      "description": "Implementation-specific data. Receivers MUST ignore keys they do not understand. Keys SHOULD be namespaced with a URI.",
       "type": "object"
     },
     "Source": {
@@ -60,7 +67,7 @@
           "enum": ["meeting", "email", "message", "document", "ticket", "record", "decision", "policy", "agent-commit", "other"]
         },
         "title": { "type": "string", "maxLength": 512 },
-        "url": { "type": "string", "format": "uri" },
+        "url": { "$ref": "#/$defs/HttpsUrl" },
         "at": { "$ref": "#/$defs/DateTime" }
       }
     },
@@ -87,7 +94,7 @@
           "enum": ["email", "message", "document", "record", "url", "other"]
         },
         "ref": { "type": "string", "minLength": 1, "maxLength": 2048 },
-        "url": { "type": "string", "format": "uri" },
+        "url": { "$ref": "#/$defs/HttpsUrl" },
         "at": { "$ref": "#/$defs/DateTime" }
       }
     },
@@ -116,19 +123,28 @@
         "entities": {
           "type": "array",
           "items": { "$ref": "#/$defs/EntityRef" },
+          "maxItems": 64,
           "uniqueItems": true
+        },
+        "evidence": {
+          "description": "What backs the fact up. For a claim, the evidence its commit supplied.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/Evidence" },
+          "maxItems": 16
         },
         "observedAt": { "$ref": "#/$defs/DateTime" },
         "supersedes": {
-          "description": "Ids of facts this one replaces.",
+          "description": "Ids of confirmed facts this one replaces. Only a confirmed fact can supersede another.",
           "type": "array",
           "items": { "$ref": "#/$defs/Id" },
+          "maxItems": 32,
           "uniqueItems": true
         },
         "visibility": {
-          "description": "Informational: the principals and groups that may see this fact. Memory has already filtered the dossier; agents MUST NOT use this to widen access.",
+          "description": "Informational: the recipient's own principal or groups through which it may see this fact. Memory MUST NOT list anyone else. Agents MUST NOT use it to widen access.",
           "type": "array",
           "items": { "$ref": "#/$defs/PrincipalRef" },
+          "maxItems": 32,
           "uniqueItems": true
         },
         "metadata": { "$ref": "#/$defs/Metadata" }
@@ -140,17 +156,22 @@
         },
         {
           "if": { "properties": { "status": { "const": "claim" } }, "required": ["status"] },
-          "then": { "required": ["claimedBy"], "not": { "required": ["confirmedBy"] } }
+          "then": {
+            "required": ["claimedBy"],
+            "not": { "anyOf": [{ "required": ["confirmedBy"] }, { "required": ["supersedes"] }] },
+            "properties": { "source": { "properties": { "kind": { "const": "agent-commit" } } } }
+          }
         }
       ]
     },
     "Precedent": {
-      "description": "An earlier decision that bears on this intent, such as a request that was turned down on another project.",
+      "description": "An earlier decision that bears on this intent, such as a request that was turned down on another project. Never derived from an agent's commit.",
       "type": "object",
-      "required": ["id", "statement", "source", "relevance"],
+      "required": ["id", "version", "statement", "source", "relevance"],
       "additionalProperties": false,
       "properties": {
         "id": { "$ref": "#/$defs/Id" },
+        "version": { "$ref": "#/$defs/Version" },
         "statement": { "type": "string", "minLength": 1, "maxLength": 4096 },
         "relevance": {
           "description": "Why memory thinks it matters for this intent.",
@@ -158,12 +179,18 @@
           "minLength": 1,
           "maxLength": 2048
         },
-        "source": { "$ref": "#/$defs/Source" },
+        "source": {
+          "allOf": [
+            { "$ref": "#/$defs/Source" },
+            { "not": { "properties": { "kind": { "const": "agent-commit" } }, "required": ["kind"] } }
+          ]
+        },
         "decidedBy": { "$ref": "#/$defs/PrincipalRef" },
         "decidedAt": { "$ref": "#/$defs/DateTime" },
         "entities": {
           "type": "array",
           "items": { "$ref": "#/$defs/EntityRef" },
+          "maxItems": 64,
           "uniqueItems": true
         },
         "metadata": { "$ref": "#/$defs/Metadata" }
@@ -172,10 +199,11 @@
     "Constraint": {
       "description": "A rule that applies to this intent right now. Memory carries it; enforcing it is the job of something outside the agent.",
       "type": "object",
-      "required": ["id", "statement", "level", "basis"],
+      "required": ["id", "version", "statement", "level", "basis"],
       "additionalProperties": false,
       "properties": {
         "id": { "$ref": "#/$defs/Id" },
+        "version": { "$ref": "#/$defs/Version" },
         "statement": { "type": "string", "minLength": 1, "maxLength": 2048 },
         "level": {
           "description": "`must`: the company requires it. `should`: the company expects it unless there is a good reason.",
@@ -187,6 +215,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/Id" },
           "minItems": 1,
+          "maxItems": 32,
           "uniqueItems": true
         },
         "until": {
@@ -207,17 +236,20 @@
         "entities": {
           "type": "array",
           "items": { "$ref": "#/$defs/EntityRef" },
+          "maxItems": 64,
           "uniqueItems": true
         },
-        "supersedes": {
-          "description": "Ids of facts the agent believes this claim replaces. Memory decides whether it does.",
+        "replaces": {
+          "description": "Ids of facts the agent believes this claim makes obsolete: a hint for the people who review it. Memory MUST NOT retire or supersede anything because of it.",
           "type": "array",
           "items": { "$ref": "#/$defs/Id" },
+          "maxItems": 32,
           "uniqueItems": true
         },
         "evidence": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Evidence" }
+          "items": { "$ref": "#/$defs/Evidence" },
+          "maxItems": 16
         },
         "metadata": { "$ref": "#/$defs/Metadata" }
       }
@@ -233,6 +265,9 @@
         "unknown-question",
         "invalid-commit",
         "stale-dossier",
+        "commit-refused",
+        "unexpected-message",
+        "limit-exceeded",
         "watch-expired",
         "internal"
       ]

@@ -2,26 +2,31 @@
 """A small Mem2A client for acting agents, plus helpers that read payloads.
 
     memory = await Mem2AClient.connect('https://memory.example.com', token=token)
-    task = await memory.negotiate(intent, push=PushTarget(url, bearer=secret))
-    dossier = dossier_of(task)          # or question_of(task), error_of(task)
+    task = await memory.negotiate(intent)
+    async for dossier, update in memory.watch(task.id):
+        if not any(c.level == 'must' for c in dossier.constraints):
+            break                       # nothing blocks the action any more
     ...act, then...
     task = await memory.commit(task, commit)
-    receipt = receipt_of(task)
+    receipt = receipt_of(task)          # or error_of(task), e.g. stale-dossier
 
 The helpers (`dossier_of`, `update_of`, ...) accept a Task, a StreamResponse
-(from `Mem2AClient.subscribe`), a push notification body (a dict), a
-Message, an Artifact or a TaskStatus.
+(from `Mem2AClient.subscribe`), a Message, an Artifact or a TaskStatus, and
+the JSON of a Task or a StreamResponse (a push body, a raw JSON-RPC result).
 """
 
 from __future__ import annotations
 
+import asyncio
 import uuid
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
+from contextlib import aclosing
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
 import httpx
 from a2a.client import A2ACardResolver, Client, ClientCallContext, ClientConfig, ClientFactory
+from a2a.client.errors import A2AClientError
 from a2a.client.service_parameters import ServiceParametersFactory, with_a2a_extensions
 from a2a.helpers import new_data_part
 from a2a.types import (
@@ -43,6 +48,7 @@ from a2a.types import (
     TaskStatus,
 )
 from a2a.utils.constants import TransportProtocol
+from a2a.utils.errors import UnsupportedOperationError
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from mem2a import constants as C
@@ -53,6 +59,16 @@ from mem2a.card import mem2a_params
 #: Anything the reading helpers understand.
 Readable = Task | StreamResponse | Message | Artifact | TaskStatus | Mapping[str, Any]
 M = TypeVar('M', bound=models.Payload)
+
+#: Task states after which nothing more happens on a task.
+FINISHED = frozenset(
+    {
+        TaskState.TASK_STATE_COMPLETED,
+        TaskState.TASK_STATE_CANCELED,
+        TaskState.TASK_STATE_FAILED,
+        TaskState.TASK_STATE_REJECTED,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -151,8 +167,10 @@ class Mem2AClient:
         """Open a task with an intent (spec 8.1).
 
         Returns the task in INPUT_REQUIRED (a dossier or a question) or
-        REJECTED (an error). With `push`, memory POSTs every event of the
-        task, including later updates, to that webhook.
+        REJECTED (an error). Other memories may also answer WORKING (phase
+        ``working``: no dossier yet, so `watch` the task) or FAILED (phase
+        ``failed``). With `push`, memory POSTs every event of the task,
+        including later updates, to that webhook.
         """
         configuration = (
             SendMessageConfiguration(task_push_notification_config=push.config())
@@ -167,13 +185,25 @@ class Mem2AClient:
         answer = models.Answer(question_id=question_id, text=text)
         return await self._send(_message(C.ANSWER, answer, task=task))
 
-    async def commit(self, task: Task, commit: models.Commit | Mapping[str, Any]) -> Task:
+    async def commit(
+        self,
+        task: Task,
+        commit: models.Commit | Mapping[str, Any],
+        *,
+        message_id: str | None = None,
+    ) -> Task:
         """Report what the agent did (spec 8.4).
 
-        Returns the task COMPLETED with a receipt, or still INPUT_REQUIRED
-        with an error (for example ``stale-dossier``).
+        Returns, rather than raises, whatever memory said: the task COMPLETED
+        with a receipt (`receipt_of`), or still INPUT_REQUIRED with an error
+        (`error_of`). On ``stale-dossier``, `dossier_of` the returned task is
+        the current dossier: commit again against its version, listing in
+        ``conflicts`` every item your action, already taken, goes against.
+
+        Pass the same `message_id` to retry a commit whose reply was lost:
+        memory returns the first result and records nothing twice.
         """
-        return await self._send(_message(C.COMMIT, commit, task=task))
+        return await self._send(_message(C.COMMIT, commit, task=task, message_id=message_id))
 
     async def get(self, task_id: str) -> Task:
         """GetTask: the task as memory has it now, with its current dossier."""
@@ -191,11 +221,63 @@ class Mem2AClient:
             target.config(task_id), context=self._context
         )
 
-    async def subscribe(self, task_id: str) -> AsyncIterator[StreamResponse]:
+    async def subscribe(self, task_id: str) -> AsyncGenerator[StreamResponse, None]:
         """SubscribeToTask: the task first, then its events, until it ends."""
         request = SubscribeToTaskRequest(id=task_id)
         async for event in self._streaming.subscribe(request, context=self._context):
             yield event
+
+    async def watch(
+        self, task_id: str, *, retries: int = 5
+    ) -> AsyncGenerator[tuple[models.Dossier, models.Update | None], None]:
+        """Follow a task's dossier until the task ends (spec 8.3).
+
+        Yields ``(dossier, update)``: first the current dossier with update
+        None, then every new version with the update that came with it. A
+        task still asking a question yields once it has a dossier. If the
+        stream closes while the task is open, `watch` subscribes again; if it
+        missed a version meanwhile, it yields the current dossier with update
+        None. It stops when the task ends (`get` says how), and gives up after
+        `retries` failed attempts in a row to reach memory.
+        """
+        last: str | None = None
+        failures, delay = 0, 0.1
+        while True:
+            try:
+                async with aclosing(self._versions(task_id)) as versions:
+                    async for dossier, update, finished in versions:
+                        failures = 0
+                        if dossier is not None and dossier.version != last:
+                            last, delay = dossier.version, 0.1
+                            yield dossier, update
+                        if finished:
+                            return
+            except UnsupportedOperationError:
+                return  # SubscribeToTask refuses tasks that have ended
+            except A2AClientError:
+                failures += 1
+                if failures > retries:
+                    raise
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 5.0)
+
+    async def _versions(
+        self, task_id: str
+    ) -> AsyncGenerator[tuple[models.Dossier | None, models.Update | None, bool], None]:
+        """One subscription as (dossier, update, finished) steps: the
+        snapshot, then each replaced dossier with the status that follows it."""
+        replaced: models.Dossier | None = None
+        async with aclosing(self.subscribe(task_id)) as events:
+            async for event in events:
+                kind = event.WhichOneof('payload')
+                if kind == 'task':
+                    yield dossier_of(event), None, event.task.status.state in FINISHED
+                elif kind == 'artifact_update':
+                    replaced = dossier_of(event) or replaced
+                elif kind == 'status_update':
+                    finished = event.status_update.status.state in FINISHED
+                    yield replaced, update_of(event), finished
+                    replaced = None
 
     async def _send(
         self, message: Message, configuration: SendMessageConfiguration | None = None
@@ -213,11 +295,12 @@ def _message(
     *,
     task: Task | None = None,
     context_id: str | None = None,
+    message_id: str | None = None,
 ) -> Message:
     """An agent message with exactly one Mem2A payload, listing the extension."""
     data = payload.dump() if isinstance(payload, models.Payload) else dict(payload)
     return Message(
-        message_id=str(uuid.uuid4()),
+        message_id=message_id or str(uuid.uuid4()),
         role=Role.ROLE_USER,
         task_id=task.id if task is not None else None,
         # Always send the contextId with the taskId (see Mem2ARequestHandler).
@@ -235,10 +318,20 @@ def parse_push(body: Mapping[str, Any]) -> StreamResponse:
     return response
 
 
+def _parse_json(body: Mapping[str, Any]) -> Task | StreamResponse:
+    """A Task as JSON (from GetTask), or a StreamResponse as JSON (a push
+    body, a stream event, a SendMessage result)."""
+    if 'status' in body and 'id' in body:
+        task = Task()
+        ParseDict(dict(body), task, ignore_unknown_fields=True)
+        return task
+    return parse_push(body)
+
+
 def _focus(obj: Readable) -> tuple[Sequence[Artifact], Message | None, TaskState | None]:
     """(artifacts, status message, state) of anything readable."""
     if isinstance(obj, Mapping):
-        obj = parse_push(obj)
+        obj = _parse_json(obj)
     if isinstance(obj, StreamResponse):
         kind = obj.WhichOneof('payload')
         if kind == 'task':

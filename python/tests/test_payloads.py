@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""The packaged schemas, the models and the Agent Card helper."""
+"""The packaged schemas, the models, durations and the Agent Card helper."""
 
 from __future__ import annotations
 
@@ -11,8 +11,15 @@ from typing import Any
 import pytest
 from google.protobuf.json_format import MessageToDict
 
-from mem2a import build_agent_card, mem2a_params, models, validation
-from mem2a.constants import EXTENSION_URI, MEDIA_TYPES
+from mem2a import (
+    build_agent_card,
+    format_duration,
+    mem2a_params,
+    models,
+    parse_duration,
+    validation,
+)
+from mem2a.constants import EXTENSION_URI, INPUT_MODES, MEDIA_TYPES, OUTPUT_MODES
 from mem2a.validation import SchemaValidationError
 
 from wire import mem2a_parts
@@ -62,16 +69,48 @@ def test_parse_rejects_what_the_schema_rejects() -> None:
     with pytest.raises(SchemaValidationError) as caught:
         models.Error.parse({'code': 'stale-dossier', 'message': 'Stale.'})
     assert 'currentVersion' in str(caught.value)
+    intent = {'action': 'x', 'summary': 'x', 'entities': ['a:b'], 'onBehalfOf': 'u'}
     with pytest.raises(SchemaValidationError):
-        models.Intent.parse(
+        models.Intent.parse({**intent, 'deadline': 'soon'})
+    with pytest.raises(SchemaValidationError):  # Evidence URLs must be https
+        models.Commit.parse(
             {
+                'basedOn': '1',
                 'action': 'x',
+                'outcome': 'done',
                 'summary': 'x',
-                'entities': ['a:b'],
-                'onBehalfOf': 'u',
-                'deadline': 'soon',
+                'claims': [
+                    {
+                        'statement': 'x',
+                        'evidence': [{'kind': 'url', 'ref': 'r', 'url': 'http://a.b'}],
+                    }
+                ],
             }
         )
+
+
+@pytest.mark.parametrize(
+    ('text', 'duration'),
+    [
+        ('P7D', timedelta(days=7)),
+        ('PT12H', timedelta(hours=12)),
+        ('PT1H30M', timedelta(minutes=90)),
+        ('P1DT2H3M4S', timedelta(days=1, hours=2, minutes=3, seconds=4)),
+        ('PT0S', timedelta(0)),
+    ],
+)
+def test_durations(text: str, duration: timedelta) -> None:
+    assert parse_duration(text) == duration
+    assert format_duration(duration) == text
+    assert not validation.errors(
+        'extension-params', {'specVersion': '0.1', 'listen': ['push'], 'watchTimeout': text}
+    )
+
+
+@pytest.mark.parametrize('text', ['', 'P', 'PT', 'P1W', 'P1Y', 'P1M', '7D', 'PT1.5S', 'P1DT'])
+def test_invalid_durations(text: str) -> None:
+    with pytest.raises(ValueError):
+        parse_duration(text)
 
 
 def test_agent_card() -> None:
@@ -85,15 +124,20 @@ def test_agent_card() -> None:
     [entry] = data['capabilities']['extensions']
     assert (entry['uri'], entry['required']) == (EXTENSION_URI, True)
     validation.validate('extension-params', entry['params'])
+    assert entry['params']['watchTimeout'] == 'P7D'
+    assert (data['defaultInputModes'], data['defaultOutputModes']) == (
+        list(INPUT_MODES),
+        list(OUTPUT_MODES),
+    )
     assert [s['id'] for s in data['skills']] == ['negotiate', 'commit']
     assert data['securitySchemes'] and data['securityRequirements']
 
     params = mem2a_params(card)
     assert params is not None
-    assert (params.watch_timeout_seconds, params.entity_types) == (604800, ['account', 'project'])
-    assert params.listen == ['push', 'subscribe']
+    assert params.watch_timeout_delta() == timedelta(days=7)
+    assert (params.entity_types, params.listen) == (['account', 'project'], ['push', 'subscribe'])
 
 
-def test_watch_timeout_below_the_schema_minimum_is_rejected() -> None:
-    with pytest.raises(SchemaValidationError):
-        build_agent_card('https://memory.example.com', watch_timeout=timedelta(seconds=30))
+def test_watch_timeouts_are_whole_seconds() -> None:
+    with pytest.raises(ValueError):
+        build_agent_card('https://memory.example.com', watch_timeout=timedelta(seconds=1.5))

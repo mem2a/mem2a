@@ -33,6 +33,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e "python[dev]"
-      - run: pytest python/tests -q
-      - name: Acme demo
-        run: python examples/acme-quote/demo.py
+      - name: Lint and type-check
+        run: |
+          ruff check python examples
+          ruff format --check python examples
+          mypy --strict python/src
+      - name: Tests, including mem2a-conform against the sandbox
+        run: pytest python/tests -q
+      - name: Examples
+        run: |
+          for demo in examples/*/demo.py; do python "$demo"; done
+          python examples/sales-agent/agent.py --self-test

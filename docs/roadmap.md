@@ -1,30 +1,35 @@
 # Roadmap
 
-## Now: draft 0.1 (private)
+Each open item links to its issue. Comment there to help, or to argue with the plan.
+
+## Draft 0.1 (now)
 
 - [x] Specification text in RFC 2119 language
 - [x] JSON Schemas for every payload, and worked examples
 - [x] Conformance checks for the examples
-- [x] Reference memory server and agent client on the A2A Python SDK, with the Acme demo
-- [ ] Fresh-eyes review of the spec by people running agents from more than one vendor
-- [ ] Security review of the claims-and-receipts model
+- [x] Reference memory, agent client and sandbox server in Python, with the Acme demo
+- [x] `mem2a-conform`, which checks any running memory
+- [x] Outside review by an agent builder, a memory implementer, a newcomer, and a spec and security reviewer; fixes applied
+- [x] Threat model
+- [ ] Design partners: teams running agents from more than one vendor ([sign up](https://github.com/mem2a/mem2a/issues/new?template=design-partner.yml))
+- [ ] Answers, from real deployments, to the [open questions](https://github.com/mem2a/mem2a/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+question%22)
 
-## Before we make the repository public
+## Before 0.2
 
-- [ ] Resolve naming of phases, error codes and media types (breaking changes are cheap now)
-- [ ] Register the `https://w3id.org/mem2a/` redirect with [w3id.org](https://w3id.org/)
-- [ ] A second client, in TypeScript, to shake out anything Python-specific
-- [ ] Tests that can run against any memory's URL, not just the reference server
-- [ ] Publish the `mem2a` package to PyPI
+- [ ] An identity profile: tokens, delegation chains and scopes ([#11](https://github.com/mem2a/mem2a/issues/11))
+- [ ] Schemas as an npm package with TypeScript types ([#13](https://github.com/mem2a/mem2a/issues/13)), and a TypeScript client ([#14](https://github.com/mem2a/mem2a/issues/14))
+- [ ] A portable way to test Listen on any memory ([#15](https://github.com/mem2a/mem2a/issues/15))
+- [ ] Freeze the names of phases, error codes and media types
+- [ ] Publish `mem2a` to PyPI ([#22](https://github.com/mem2a/mem2a/issues/22)), and register the `w3id.org` redirect ([#21](https://github.com/mem2a/mem2a/issues/21))
+- [ ] Co-maintainers from outside Sentra ([#19](https://github.com/mem2a/mem2a/issues/19))
 
-## After it's public
+## Toward an A2A extension
 
-- [ ] Open a proposal issue in [a2aproject/A2A](https://github.com/a2aproject/A2A), following A2A's [extension governance](https://github.com/a2aproject/A2A/blob/main/docs/topics/extension-and-binding-governance.md): an abstract, why the core protocol can't do this, and this draft.
-- [ ] Find an A2A maintainer to sponsor Mem2A as an experimental extension (`experimental-ext-mem2a`).
-- [ ] Draft 0.2, answering the open questions in [section 14](../spec/v0.1/mem2a.md#14-open-questions) as real deployments answer them.
+Following A2A's [extension governance](https://github.com/a2aproject/A2A/blob/main/docs/topics/extension-and-binding-governance.md):
 
-## Toward 1.0
-
-- [ ] Two independent implementations that interoperate
-- [ ] Graduation to an official A2A extension, which needs a production-quality reference implementation, documentation, evidence of adoption and a TSC vote, or another neutral home if that fits better
+- [ ] Raise what Mem2A needs from A2A and its SDKs ([#12](https://github.com/mem2a/mem2a/issues/12))
+- [ ] Open a proposal issue on a2aproject/A2A, and find an A2A maintainer to sponsor Mem2A as an experimental extension
+- [ ] Two independent implementations that interoperate, shown at a plugfest
+- [ ] A patent policy for the specification ([#20](https://github.com/mem2a/mem2a/issues/20))
+- [ ] Graduation to an official extension, which needs a production-quality reference implementation, documentation, evidence of adoption and a vote of A2A's Technical Steering Committee
 - [ ] A stable URI (`/v1`) with a compatibility promise

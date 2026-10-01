@@ -25,12 +25,16 @@
                 "data": {
                   "action": "send_quote",
                   "summary": "Send Acme a renewal quote",
-                  "entities": ["account:acme"],
+                  "entities": [
+                    "account:acme"
+                  ],
                   "onBehalfOf": "user:tom"
                 }
               }
             ],
-            "extensions": ["https://w3id.org/mem2a/v0.1"]
+            "extensions": [
+              "https://w3id.org/mem2a/v0.1"
+            ]
           }
         }
       }
@@ -56,7 +60,9 @@
                 "contextId": "ctx-priya-1",
                 "role": "ROLE_AGENT",
                 "parts": [
-                  { "text": "Refused: this agent is signed in for user:priya, not user:tom." },
+                  {
+                    "text": "Refused: this agent is signed in for user:priya, not user:tom."
+                  },
                   {
                     "mediaType": "application/vnd.mem2a.error+json",
                     "data": {
@@ -66,9 +72,12 @@
                   }
                 ],
                 "metadata": {
-                  "https://w3id.org/mem2a/v0.1/phase": "refused"
+                  "https://w3id.org/mem2a/v0.1/phase": "refused",
+                  "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-priya-009"
                 },
-                "extensions": ["https://w3id.org/mem2a/v0.1"]
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
               },
               "timestamp": "2026-09-28T10:00:01Z"
             }

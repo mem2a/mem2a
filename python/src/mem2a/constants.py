@@ -12,6 +12,12 @@ SCHEMA_BASE: Final = f'{EXTENSION_URI}/schemas/'
 
 #: Metadata key carried by every memory status message.
 PHASE_KEY: Final = f'{EXTENSION_URI}/phase'
+#: Metadata key on memory's replies: the messageId of the agent message answered.
+IN_REPLY_TO_KEY: Final = f'{EXTENSION_URI}/inReplyTo'
+
+#: Content-Type of push notification bodies.
+A2A_JSON: Final = 'application/a2a+json'
+TEXT: Final = 'text/plain'
 
 # ---------------------------------------------------------------- media types
 INTENT: Final = 'application/vnd.mem2a.intent+json'
@@ -52,19 +58,27 @@ MEDIA_TYPE_OF: Final[dict[PayloadKind, str]] = {
 #: Payloads an acting agent sends (exactly one per message).
 AGENT_PAYLOADS: Final[frozenset[PayloadKind]] = frozenset({'intent', 'answer', 'commit'})
 
+#: The Agent Card's ``defaultInputModes`` and ``defaultOutputModes``.
+INPUT_MODES: Final = (INTENT, ANSWER, COMMIT, TEXT)
+OUTPUT_MODES: Final = (DOSSIER, QUESTION, UPDATE, RECEIPT, ERROR, TEXT)
+
 # ------------------------------------------------------- reserved artifact ids
 DOSSIER_ARTIFACT: Final = 'dossier'
 RECEIPT_ARTIFACT: Final = 'receipt'
 
 # ---------------------------------------------------------------------- phases
 Phase = Literal[
+    'working',  # TASK_STATE_SUBMITTED or TASK_STATE_WORKING
     'question',  # TASK_STATE_INPUT_REQUIRED
     'awaiting-commit',  # TASK_STATE_INPUT_REQUIRED
+    'reauth',  # TASK_STATE_AUTH_REQUIRED
     'committed',  # TASK_STATE_COMPLETED
     'refused',  # TASK_STATE_REJECTED
     'expired',  # TASK_STATE_CANCELED
     'canceled',  # TASK_STATE_CANCELED
+    'failed',  # TASK_STATE_FAILED
 ]
+#: Phases in which a task takes messages (and, for awaiting-commit, is watched).
 OPEN_PHASES: Final[frozenset[str]] = frozenset({'question', 'awaiting-commit'})
 
 # ----------------------------------------------------------------- error codes
@@ -77,6 +91,9 @@ ErrorCode = Literal[
     'unknown-question',
     'invalid-commit',
     'stale-dossier',
+    'commit-refused',
+    'unexpected-message',
+    'limit-exceeded',
     'watch-expired',
     'internal',
 ]

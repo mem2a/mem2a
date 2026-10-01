@@ -22,17 +22,19 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Struct
 
 from mem2a import constants as C
-from mem2a.models import ExtensionParams
+from mem2a.auth import DEV_TOKEN_FORMAT
+from mem2a.models import ExtensionParams, format_duration
 
 
 #: The scheme `mem2a.auth.DevTokenAuthenticator` implements.
 DEV_TOKEN_SCHEME = SecurityScheme(
     http_auth_security_scheme=HTTPAuthSecurityScheme(
         scheme='Bearer',
-        bearer_format='dev:<agent>:<principal>[:<group>,...]',
-        description='Development tokens that name the agent and the principal it acts '
-        'for. Unsigned: not for production. Replace with your identity provider, for '
-        'example OAuth 2.0 Token Exchange (RFC 8693).',
+        bearer_format=DEV_TOKEN_FORMAT,
+        description='Unsigned development tokens that name the agent and the principal it '
+        'acts for, in the form dev:<agent>:<principal>[:<groups>], for example '
+        'dev:sales-assistant:user:tom:group:sales. Not for production: use your identity '
+        'provider instead, for example OAuth 2.0 Token Exchange (RFC 8693).',
     )
 )
 
@@ -43,10 +45,13 @@ def extension_params(
     watch_timeout: timedelta | None = None,
     entity_types: Iterable[str] | None = None,
 ) -> ExtensionParams:
-    """The Mem2A ``params``, validated against extension-params.schema.json."""
+    """The Mem2A ``params``, validated against extension-params.schema.json.
+
+    `watch_timeout` is advertised as an ISO 8601 duration (``P7D``).
+    """
     data: dict[str, object] = {'specVersion': C.SPEC_VERSION, 'listen': list(listen)}
     if watch_timeout is not None:
-        data['watchTimeoutSeconds'] = int(watch_timeout.total_seconds())
+        data['watchTimeout'] = format_duration(watch_timeout)
     if entity_types is not None:
         data['entityTypes'] = list(entity_types)
     return ExtensionParams.parse(data)
@@ -70,10 +75,11 @@ def build_agent_card(
 ) -> AgentCard:
     """An Agent Card for a Mem2A memory served over JSON-RPC at `url`.
 
-    Declares streaming and push notifications (both ways to listen), the
-    required Mem2A extension with its params, the ``negotiate`` and ``commit``
-    skills, and a security scheme. The default scheme describes the dev tokens
-    of the reference server; pass your own for production.
+    Declares streaming and push notifications (both ways to listen), the Mem2A
+    extension (always ``required``) with its params, the Mem2A media types as
+    input and output modes, the ``negotiate`` and ``commit`` skills, and a
+    security scheme. The default scheme describes the reference server's dev
+    tokens; pass your own for production.
     """
     params = extension_params(watch_timeout=watch_timeout, entity_types=entity_types)
     if security_schemes is None:
@@ -107,8 +113,8 @@ def build_agent_card(
         ),
         security_schemes=dict(security_schemes),
         security_requirements=list(security_requirements),
-        default_input_modes=['application/json'],
-        default_output_modes=['application/json', 'text/plain'],
+        default_input_modes=list(C.INPUT_MODES),
+        default_output_modes=list(C.OUTPUT_MODES),
         skills=[
             AgentSkill(
                 id='negotiate',

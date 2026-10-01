@@ -1,0 +1,288 @@
+{
+  "title": "Listen, on a stream: Priya's agent hears about Tom's quote as a claim",
+  "description": "Priya's agent opened its own task at 15:05 (\"draft a follow-up to Acme\", dossier 14) and keeps a SubscribeToTask stream open. When Tom's agent commits (example 05), memory records the claim f-352 and re-checks every open task about account:acme. Priya's dossier becomes version 15, carrying the claim marked as unconfirmed. Each event below is the data of one server-sent event (`data: <json>`). The first event is the task snapshot A2A requires.",
+  "sse": {
+    "request": {
+      "method": "POST",
+      "url": "https://memory.example.com/a2a/jsonrpc",
+      "headers": {
+        "Content-Type": "application/json",
+        "A2A-Version": "1.0",
+        "A2A-Extensions": "https://w3id.org/mem2a/v0.1",
+        "Authorization": "Bearer <delegated token: agent=account-assistant, sub=user:priya>",
+        "Accept": "text/event-stream"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "30",
+        "method": "SubscribeToTask",
+        "params": {
+          "id": "task-acme-followup"
+        }
+      }
+    },
+    "events": [
+      {
+        "jsonrpc": "2.0",
+        "id": "30",
+        "result": {
+          "task": {
+            "id": "task-acme-followup",
+            "contextId": "ctx-priya-acme",
+            "status": {
+              "state": "TASK_STATE_INPUT_REQUIRED",
+              "message": {
+                "messageId": "msg-mem-301",
+                "taskId": "task-acme-followup",
+                "contextId": "ctx-priya-acme",
+                "role": "ROLE_AGENT",
+                "parts": [
+                  {
+                    "text": "Nothing here blocks this. Latest: legal approved Acme renewal pricing at $1.2M a year."
+                  }
+                ],
+                "metadata": {
+                  "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit",
+                  "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-priya-001"
+                },
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              },
+              "timestamp": "2026-09-28T15:05:00Z"
+            },
+            "artifacts": [
+              {
+                "artifactId": "dossier",
+                "name": "dossier",
+                "parts": [
+                  {
+                    "mediaType": "application/vnd.mem2a.dossier+json",
+                    "data": {
+                      "version": "14",
+                      "summary": "Nothing here blocks this. Latest: legal approved Acme renewal pricing at $1.2M a year.",
+                      "facts": [
+                        {
+                          "id": "f-340",
+                          "version": "1",
+                          "statement": "Legal approved Acme renewal pricing at $1.2M a year.",
+                          "status": "confirmed",
+                          "confirmedBy": "user:general-counsel",
+                          "source": {
+                            "kind": "email",
+                            "ref": "email:legal-acme-approval-2026-09-28",
+                            "title": "Acme pricing: approved",
+                            "at": "2026-09-28T15:02:00Z"
+                          },
+                          "entities": [
+                            "account:acme"
+                          ],
+                          "supersedes": [
+                            "f-311"
+                          ]
+                        },
+                        {
+                          "id": "f-208",
+                          "version": "1",
+                          "statement": "Acme's current contract renews on October 31, 2026.",
+                          "status": "confirmed",
+                          "confirmedBy": "system:crm",
+                          "source": {
+                            "kind": "record",
+                            "ref": "crm:opportunity/acme-renewal-2026"
+                          },
+                          "entities": [
+                            "account:acme"
+                          ]
+                        }
+                      ],
+                      "precedent": [],
+                      "constraints": [],
+                      "watching": [
+                        "f-340",
+                        "f-208"
+                      ],
+                      "expiresAt": "2026-10-05T15:05:00Z"
+                    }
+                  }
+                ],
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              }
+            ],
+            "history": [
+              {
+                "messageId": "msg-priya-001",
+                "taskId": "task-acme-followup",
+                "contextId": "ctx-priya-acme",
+                "role": "ROLE_USER",
+                "parts": [
+                  {
+                    "mediaType": "application/vnd.mem2a.intent+json",
+                    "data": {
+                      "action": "draft_followup",
+                      "summary": "Draft a follow-up email to Acme about the renewal",
+                      "entities": [
+                        "account:acme"
+                      ],
+                      "onBehalfOf": "user:priya"
+                    }
+                  }
+                ],
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "jsonrpc": "2.0",
+        "id": "30",
+        "result": {
+          "artifactUpdate": {
+            "taskId": "task-acme-followup",
+            "contextId": "ctx-priya-acme",
+            "artifact": {
+              "artifactId": "dossier",
+              "name": "dossier",
+              "parts": [
+                {
+                  "mediaType": "application/vnd.mem2a.dossier+json",
+                  "data": {
+                    "version": "15",
+                    "summary": "Tom's agent reports it sent Acme the renewal quote. Not confirmed yet.",
+                    "facts": [
+                      {
+                        "id": "f-340",
+                        "version": "1",
+                        "statement": "Legal approved Acme renewal pricing at $1.2M a year.",
+                        "status": "confirmed",
+                        "confirmedBy": "user:general-counsel",
+                        "source": {
+                          "kind": "email",
+                          "ref": "email:legal-acme-approval-2026-09-28",
+                          "title": "Acme pricing: approved",
+                          "at": "2026-09-28T15:02:00Z"
+                        },
+                        "entities": [
+                          "account:acme"
+                        ],
+                        "supersedes": [
+                          "f-311"
+                        ]
+                      },
+                      {
+                        "id": "f-208",
+                        "version": "1",
+                        "statement": "Acme's current contract renews on October 31, 2026.",
+                        "status": "confirmed",
+                        "confirmedBy": "system:crm",
+                        "source": {
+                          "kind": "record",
+                          "ref": "crm:opportunity/acme-renewal-2026"
+                        },
+                        "entities": [
+                          "account:acme"
+                        ]
+                      },
+                      {
+                        "id": "f-352",
+                        "version": "1",
+                        "statement": "Tom sent Acme a renewal quote at $1.2M a year.",
+                        "status": "claim",
+                        "claimedBy": {
+                          "agent": "agent:sales-assistant",
+                          "onBehalfOf": "user:tom",
+                          "at": "2026-09-28T15:20:30Z",
+                          "commitId": "cm-9f2"
+                        },
+                        "source": {
+                          "kind": "agent-commit",
+                          "ref": "commit:cm-9f2",
+                          "at": "2026-09-28T15:20:30Z"
+                        },
+                        "entities": [
+                          "account:acme",
+                          "doc:acme-renewal-quote"
+                        ],
+                        "evidence": [
+                          {
+                            "kind": "email",
+                            "ref": "email:<CAF1e2d3-acme-quote@mail.example.com>",
+                            "at": "2026-09-28T15:18:40Z"
+                          }
+                        ]
+                      }
+                    ],
+                    "precedent": [],
+                    "constraints": [],
+                    "watching": [
+                      "f-340",
+                      "f-208",
+                      "f-352"
+                    ],
+                    "expiresAt": "2026-10-05T15:05:00Z"
+                  }
+                }
+              ],
+              "extensions": [
+                "https://w3id.org/mem2a/v0.1"
+              ]
+            },
+            "append": false,
+            "lastChunk": true
+          }
+        }
+      },
+      {
+        "jsonrpc": "2.0",
+        "id": "30",
+        "result": {
+          "statusUpdate": {
+            "taskId": "task-acme-followup",
+            "contextId": "ctx-priya-acme",
+            "status": {
+              "state": "TASK_STATE_INPUT_REQUIRED",
+              "message": {
+                "messageId": "msg-mem-302",
+                "taskId": "task-acme-followup",
+                "contextId": "ctx-priya-acme",
+                "role": "ROLE_AGENT",
+                "parts": [
+                  {
+                    "text": "Heads up: Tom's agent reports it sent Acme the renewal quote at $1.2M a year. That's a claim until the CRM or a person confirms it."
+                  },
+                  {
+                    "mediaType": "application/vnd.mem2a.update+json",
+                    "data": {
+                      "dossierVersion": "15",
+                      "previousVersion": "14",
+                      "summary": "Tom's agent reports sending Acme the renewal quote (unconfirmed).",
+                      "changes": [
+                        {
+                          "id": "f-352",
+                          "kind": "fact",
+                          "change": "added"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "metadata": {
+                  "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit"
+                },
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
+              },
+              "timestamp": "2026-09-28T15:20:31Z"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

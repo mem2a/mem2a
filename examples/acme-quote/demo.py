@@ -5,14 +5,14 @@
     python examples/acme-quote/demo.py
 
 Starts a Mem2A memory on localhost, seeded with the spec's Acme story
-(spec/v0.1/examples 02-05), and plays it:
+(spec/v0.1/examples 02-05 and 09), and plays it:
 
 1. Tom's sales agent wants to send Acme a renewal quote. Memory says hold:
    legal paused Acme pricing (fact f-311, constraint c-17, precedent p-4).
 2. Legal clears the pricing (f-340 supersedes f-311). Memory pushes a new
    dossier to Tom's webhook, and c-17 lapses.
 3. Priya's agent is about to draft a follow-up to Acme. It negotiates too,
-   and keeps a SubscribeToTask stream open.
+   and watches its task (SubscribeToTask, through `Mem2AClient.watch`).
 4. Tom's agent sends the quote and commits. Memory records a claim, and
    Priya's agent hears about it right away.
 5. The CRM confirms the claim. Priya's agent hears that too, and cancels its
@@ -22,11 +22,9 @@ Starts a Mem2A memory on localhost, seeded with the spec's Acme story
 from __future__ import annotations
 
 import asyncio
-import socket
 import sys
 import time
-from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from contextlib import aclosing
 from typing import Any
 
 import httpx
@@ -39,9 +37,7 @@ from starlette.routing import Route
 from mem2a import (
     DevTokenAuthenticator,
     Mem2AClient,
-    MemoryEngine,
     PushTarget,
-    Relevance,
     create_app,
     dossier_of,
     models,
@@ -50,82 +46,8 @@ from mem2a import (
     state_of,
     update_of,
 )
-
-
-TOM = DevTokenAuthenticator.token('sales-assistant', 'user:tom', ['group:sales'])
-PRIYA = DevTokenAuthenticator.token('account-manager', 'user:priya', ['group:sales'])
-
-
-def seed(memory: MemoryEngine) -> None:
-    """What Example Corp's memory knows on Monday morning (spec example 02)."""
-    memory.add_source(
-        'meeting:legal-weekly-2026-09-25',
-        kind='meeting',
-        title='Legal weekly',
-        at=datetime(2026, 9, 25, 17, tzinfo=timezone.utc),
-        readers=['group:sales', 'group:legal'],
-    )
-    memory.add_fact(
-        'f-311',
-        'Legal paused new pricing for Acme on Friday, pending a contract review.',
-        source='meeting:legal-weekly-2026-09-25',
-        confirmed_by='user:general-counsel',
-        entities=['account:acme'],
-    )
-    memory.add_source('crm:opportunity/acme-renewal-2026', kind='record')
-    memory.add_fact(
-        'f-208',
-        "Acme's current contract renews on October 31, 2026.",
-        source='crm:opportunity/acme-renewal-2026',
-        confirmed_by='system:crm',
-        entities=['account:acme'],
-    )
-    memory.add_source('decision:globex-quote-withdrawal-2026-06', kind='decision')
-    memory.add_precedent(
-        'p-4',
-        'In June, a renewal quote sent to Globex during a legal review had to be withdrawn.',
-        source='decision:globex-quote-withdrawal-2026-06',
-        decided_by='user:general-counsel',
-        decided_at=datetime(2026, 6, 12, 15, tzinfo=timezone.utc),
-        relevance=[
-            Relevance(
-                'Same situation: pricing sent while legal was still reviewing.',
-                actions={'send_quote'},
-                facts={'f-311'},
-            )
-        ],
-    )
-    memory.add_policy(
-        'c-17',
-        'Do not send Acme new pricing until legal clears it.',
-        level='must',
-        basis=['f-311'],
-        actions=['send_quote'],
-        until='Legal clears Acme pricing.',
-    )
-    # Who may see claims agents make about these entities.
-    memory.set_entity_readers('account:acme', ['group:sales', 'group:legal'])
-    memory.set_entity_readers('doc:acme-renewal-quote', ['group:sales'])
-
-
-def legal_clears(memory: MemoryEngine) -> None:
-    """Monday afternoon (spec example 03)."""
-    memory.add_source(
-        'email:legal-acme-approval-2026-09-28',
-        kind='email',
-        title='Acme pricing: approved',
-        at=datetime(2026, 9, 28, 15, 2, tzinfo=timezone.utc),
-        readers=['group:sales', 'group:legal'],
-    )
-    memory.add_fact(
-        'f-340',
-        'Legal approved Acme renewal pricing at $1.2M a year.',
-        source='email:legal-acme-approval-2026-09-28',
-        confirmed_by='user:general-counsel',
-        entities=['account:acme'],
-        supersedes=['f-311'],
-        note='Legal cleared Acme pricing.',
-    )
+from mem2a.seeds import PRIYA, PRIYA_INTENT, TOM, TOM_INTENT, legal_clears, seeded_engine
+from mem2a.server import listen_socket
 
 
 # ------------------------------------------------------------- narration
@@ -151,8 +73,10 @@ def show_dossier(dossier: models.Dossier) -> None:
         )
 
 
-def show_update(update: models.Update, dossier: models.Dossier) -> None:
-    """One line per change; details for facts the agent can now read."""
+def show_update(where: str, update: models.Update, dossier: models.Dossier) -> None:
+    """Which version replaced which, then one line per change, with details for
+    the items the agent can now read."""
+    say('memory', f'{where}: dossier {dossier.version} replaces {update.previous_version}.')
     signs = {'added': '+', 'updated': '~', 'removed': '-'}
     facts = {fact.id: fact for fact in dossier.facts}
     for change in update.changes:
@@ -175,7 +99,7 @@ class Webhook:
         self.app = Starlette(routes=[Route('/a2a/callbacks', self._receive, methods=['POST'])])
 
     async def _receive(self, request: Request) -> JSONResponse:
-        if request.headers.get('authorization') == 'Bearer single-use-secret':
+        if request.headers.get('authorization') == 'Bearer secret-for-this-task':
             await self.received.put(await request.json())
         return JSONResponse({})
 
@@ -194,8 +118,7 @@ class Host:
     """An ASGI app under uvicorn on a free localhost port."""
 
     def __init__(self) -> None:
-        self.socket = socket.socket()
-        self.socket.bind(('127.0.0.1', 0))
+        self.socket = listen_socket()
         self.url = f'http://127.0.0.1:{self.socket.getsockname()[1]}'
 
     async def start(self, app: Any) -> None:
@@ -210,18 +133,6 @@ class Host:
         await self.task
 
 
-async def updates(
-    stream: AsyncIterator[Any],
-) -> AsyncIterator[tuple[models.Dossier, models.Update]]:
-    """Pairs of (replaced dossier, update) from a SubscribeToTask stream."""
-    dossier = None
-    async for event in stream:
-        dossier = dossier_of(event) or dossier
-        update = update_of(event)
-        if update is not None and dossier is not None:
-            yield dossier, update
-
-
 def local_http() -> httpx.AsyncClient:
     return httpx.AsyncClient(trust_env=False, timeout=10)  # localhost: skip any proxy
 
@@ -229,14 +140,13 @@ def local_http() -> httpx.AsyncClient:
 # ------------------------------------------------------------------ story
 async def main() -> int:
     started = time.perf_counter()
-    engine = MemoryEngine(first_version=12)  # so the versions match the spec examples
-    seed(engine)
-
+    engine = seeded_engine('acme')  # dossier numbering starts at 12, as in the examples
     memory_host, webhook_host, webhook = Host(), Host(), Webhook()
     server = create_app(
         engine,
         url=memory_host.url,
         authenticator=DevTokenAuthenticator(),
+        push_origins=[webhook_host.url],  # memory calls this webhook, and nothing else
         push_client=local_http(),
         validation='raise',
     )
@@ -249,16 +159,8 @@ async def main() -> int:
     try:
         # 1. Tom's agent negotiates before acting, and leaves a webhook.
         say('tom', 'About to send Acme a renewal quote. Asking memory first.')
-        push = PushTarget(f'{webhook_host.url}/a2a/callbacks', bearer='single-use-secret')
-        tom_task = await tom.negotiate(
-            {
-                'action': 'send_quote',
-                'summary': 'Send Acme a renewal quote',
-                'entities': ['account:acme', 'doc:acme-renewal-quote'],
-                'onBehalfOf': 'user:tom',
-            },
-            push=push,
-        )
+        push = PushTarget(f'{webhook_host.url}/a2a/callbacks', bearer='secret-for-this-task')
+        tom_task = await tom.negotiate(TOM_INTENT, push=push)
         dossier = dossier_of(tom_task)
         assert dossier is not None
         say('memory', f'dossier {dossier.version}, {phase_of(tom_task)}: "{dossier.summary}"')
@@ -270,86 +172,70 @@ async def main() -> int:
         say('legal', 'Approves Acme pricing at $1.2M a year (f-340 supersedes f-311).')
         legal_clears(engine)
         dossier, update = await webhook.next_update()
-        say('memory', f'push to tom: dossier {dossier.version} replaces {update.previous_version}.')
-        say('', f'  "{update.summary}"')
-        show_update(update, dossier)
+        show_update('push to tom', update, dossier)
+        say('', f'  Summary: "{update.summary}"')
         say('tom', 'No constraints left. Sending the quote.')
 
-        # 3. Priya's agent negotiates too, and subscribes instead of a webhook.
+        # 3. Priya's agent negotiates too, and watches instead of leaving a webhook.
         print()
         say('priya', 'About to draft a follow-up to Acme. Asking memory first.')
-        priya_task = await priya.negotiate(
-            {
-                'action': 'draft_followup',
-                'summary': 'Draft a follow-up to Acme about the renewal',
-                'entities': ['account:acme'],
-                'onBehalfOf': 'user:priya',
-            }
-        )
-        priya_dossier = dossier_of(priya_task)
-        assert priya_dossier is not None
-        say('memory', f'dossier {priya_dossier.version}: "{priya_dossier.summary}"')
-        priya_updates = updates(priya.subscribe(priya_task.id))
+        priya_task = await priya.negotiate(PRIYA_INTENT)
+        async with aclosing(priya.watch(priya_task.id)) as watch:
+            priya_dossier, _ = await asyncio.wait_for(anext(watch), 5)
+            say('memory', f'dossier {priya_dossier.version}: "{priya_dossier.summary}"')
 
-        # 4. Tom's agent acted: it commits against the dossier it relied on.
-        print()
-        say('tom', f'Quote sent. Committing against dossier {dossier.version}.')
-        done = await tom.commit(
-            tom_task,
-            {
-                'basedOn': dossier.version,
-                'action': 'send_quote',
-                'outcome': 'done',
-                'summary': 'Sent Acme the renewal quote at $1.2M a year.',
-                'claims': [
-                    {
-                        'statement': 'Tom sent Acme a renewal quote at $1.2M a year.',
-                        'entities': ['account:acme', 'doc:acme-renewal-quote'],
-                        'evidence': [
-                            {'kind': 'email', 'ref': 'email:<acme-quote@mail.example.com>'}
-                        ],
-                    }
-                ],
-            },
-        )
-        receipt = receipt_of(done)
-        assert receipt is not None
-        [recorded] = receipt.recorded
-        say(
-            'memory',
-            f'receipt {receipt.commit_id}: {recorded.fact_id} recorded as a {recorded.status}.',
-        )
-        say('', f'  Task {state(done)}, phase {phase_of(done)}.')
+            # 4. Tom's agent acted: it commits against the dossier it relied on.
+            print()
+            say('tom', f'Quote sent. Committing against dossier {dossier.version}.')
+            done = await tom.commit(
+                tom_task,
+                {
+                    'basedOn': dossier.version,
+                    'action': 'send_quote',
+                    'outcome': 'done',
+                    'summary': 'Sent Acme the renewal quote at $1.2M a year.',
+                    'claims': [
+                        {
+                            'statement': 'Tom sent Acme a renewal quote at $1.2M a year.',
+                            'entities': ['account:acme', 'doc:acme-renewal-quote'],
+                            'evidence': [
+                                {'kind': 'email', 'ref': 'email:<acme-quote@mail.example.com>'}
+                            ],
+                        }
+                    ],
+                },
+            )
+            receipt = receipt_of(done)
+            assert receipt is not None
+            [recorded] = receipt.recorded
+            say(
+                'memory',
+                f'receipt {receipt.commit_id}: {recorded.fact_id} recorded as a {recorded.status}.',
+            )
+            say('', f'  Task {state(done)}, phase {phase_of(done)}.')
 
-        priya_dossier, update = await asyncio.wait_for(anext(priya_updates), 5)
-        say(
-            'memory',
-            f'stream to priya: dossier {priya_dossier.version} replaces {update.previous_version}.',
-        )
-        show_update(update, priya_dossier)
+            priya_dossier, priya_update = await asyncio.wait_for(anext(watch), 5)
+            assert priya_update is not None
+            show_update('watch for priya', priya_update, priya_dossier)
 
-        # 5. A system of record confirms the claim.
-        print()
-        say('crm', f'The CRM shows the quote went out: confirms {recorded.fact_id}.')
-        engine.confirm_fact(recorded.fact_id, by='system:crm')
-        priya_dossier, update = await asyncio.wait_for(anext(priya_updates), 5)
-        say(
-            'memory',
-            f'stream to priya: dossier {priya_dossier.version} replaces {update.previous_version}.',
-        )
-        show_update(update, priya_dossier)
-        say('priya', 'Tom already sent the quote, so no follow-up now. Canceling.')
-        canceled = await priya.cancel(priya_task.id)
-        say(
-            'memory',
-            f'Task {state(canceled)}, phase {phase_of(canceled)}. Memory stopped watching.',
-        )
-        await priya_updates.aclose()
+            # 5. A system of record confirms the claim.
+            print()
+            say('crm', f'The CRM shows the quote went out: confirms {recorded.fact_id}.')
+            engine.confirm_fact(recorded.fact_id, by='system:crm')
+            priya_dossier, priya_update = await asyncio.wait_for(anext(watch), 5)
+            assert priya_update is not None
+            show_update('watch for priya', priya_update, priya_dossier)
+            say('priya', 'Tom already sent the quote, so no follow-up now. Canceling.')
+            canceled = await priya.cancel(priya_task.id)
+            say(
+                'memory',
+                f'Task {state(canceled)}, phase {phase_of(canceled)}. Memory stopped watching.',
+            )
     finally:
         await tom.close()
         await priya.close()
+        await memory_host.stop()  # memory sends its last push notifications first
         await webhook_host.stop()
-        await memory_host.stop()
 
     print(f'\nDone in {time.perf_counter() - started:.1f} s.')
     return 0

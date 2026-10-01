@@ -21,21 +21,24 @@ from mem2a.constants import AGENT_PAYLOADS, EXTENSION_URI, MEDIA_TYPES, PHASE_KE
 T = TypeVar('T')
 
 PHASES_BY_STATE = {
+    'TASK_STATE_SUBMITTED': {'working'},
+    'TASK_STATE_WORKING': {'working'},
     'TASK_STATE_INPUT_REQUIRED': {'question', 'awaiting-commit'},
+    'TASK_STATE_AUTH_REQUIRED': {'reauth'},
     'TASK_STATE_COMPLETED': {'committed'},
     'TASK_STATE_REJECTED': {'refused'},
     'TASK_STATE_CANCELED': {'expired', 'canceled'},
+    'TASK_STATE_FAILED': {'failed'},
 }
 
 
-def walk(node: Any) -> Iterator[Any]:
+def walk(node: Any, *, skip_agent_messages: bool = False) -> Iterator[Any]:
+    if skip_agent_messages and isinstance(node, dict) and node.get('role') == 'ROLE_USER':
+        return
     yield node
-    if isinstance(node, dict):
-        for value in node.values():
-            yield from walk(value)
-    elif isinstance(node, list):
-        for value in node:
-            yield from walk(value)
+    children = node.values() if isinstance(node, dict) else node if isinstance(node, list) else ()
+    for value in children:
+        yield from walk(value, skip_agent_messages=skip_agent_messages)
 
 
 def mem2a_parts(node: Any) -> Iterator[tuple[str, Any]]:
@@ -46,15 +49,23 @@ def mem2a_parts(node: Any) -> Iterator[tuple[str, Any]]:
             yield item['mediaType'], item.get('data')
 
 
-def check(obj: T) -> T:
+def check(obj: T, *, agent_messages: bool = True) -> T:
     """Assert the Mem2A wire rules on a Task, StreamResponse, push body or
-    JSON-RPC response, and return it unchanged."""
+    JSON-RPC response, and return it unchanged.
+
+    `agent_messages=False` skips the agent's own messages, for tests that send
+    invalid ones on purpose.
+    """
     data = MessageToDict(obj) if isinstance(obj, ProtoMessage) else obj
-    for media_type, payload in mem2a_parts(data):
-        assert media_type in MEDIA_TYPES, media_type
-        problems = validation.errors(MEDIA_TYPES[media_type], payload)
-        assert not problems, (media_type, problems)
-    for item in walk(data):
+    skip = not agent_messages
+    for item in walk(data, skip_agent_messages=skip):
+        if isinstance(item, dict) and str(item.get('mediaType', '')).startswith(
+            'application/vnd.mem2a.'
+        ):
+            assert item['mediaType'] in MEDIA_TYPES, item['mediaType']
+            problems = validation.errors(MEDIA_TYPES[item['mediaType']], item.get('data'))
+            assert not problems, (item['mediaType'], problems)
+    for item in walk(data, skip_agent_messages=skip):
         if not isinstance(item, dict):
             continue
         if 'messageId' in item and 'role' in item:

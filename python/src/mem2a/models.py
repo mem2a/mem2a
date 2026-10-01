@@ -7,11 +7,15 @@ convenience for building and reading payloads:
 * ``Intent.parse(data)`` validates `data` against the intent schema, then
   returns the model. Every top-level payload has ``parse``.
 * ``payload.dump()`` returns the JSON-ready dict that goes on the wire.
+
+Mem2A payloads contain no JSON numbers: versions are strings, and so is the
+card's ``watchTimeout`` (an ISO 8601 duration; see `parse_duration`).
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -97,6 +101,7 @@ class Fact(Payload):
     confirmed_by: str | None = None
     claimed_by: Attribution | None = None
     entities: list[str] | None = None
+    evidence: list[Evidence] | None = None
     observed_at: datetime | None = None
     supersedes: list[str] | None = None
     visibility: list[str] | None = None
@@ -105,6 +110,7 @@ class Fact(Payload):
 
 class Precedent(Payload):
     id: str
+    version: str
     statement: str
     relevance: str
     source: Source
@@ -116,6 +122,7 @@ class Precedent(Payload):
 
 class Constraint(Payload):
     id: str
+    version: str
     statement: str
     level: Level
     basis: list[str]
@@ -126,7 +133,7 @@ class Constraint(Payload):
 class Claim(Payload):
     statement: str
     entities: list[str] | None = None
-    supersedes: list[str] | None = None
+    replaces: list[str] | None = None
     evidence: list[Evidence] | None = None
     metadata: dict[str, Any] | None = None
 
@@ -220,8 +227,9 @@ class Receipt(Payload):
     commit_id: str
     based_on: str
     recorded: list[RecordedFact]
+    #: Ids from the commit's ``conflicts``, as recorded for review.
+    conflicts: list[str]
     at: datetime
-    conflicts_recorded: int | None = None
     metadata: dict[str, Any] | None = None
 
 
@@ -241,5 +249,47 @@ class ExtensionParams(Payload):
 
     spec_version: Literal['0.1'] = '0.1'
     listen: list[Literal['push', 'subscribe']]
-    watch_timeout_seconds: int | None = None
+    #: ISO 8601 duration, for example ``P7D``; see `watch_timeout_delta`.
+    watch_timeout: str | None = None
     entity_types: list[str] | None = None
+
+    def watch_timeout_delta(self) -> timedelta | None:
+        """``watchTimeout`` as a timedelta, or None if memory doesn't expire watches."""
+        return None if self.watch_timeout is None else parse_duration(self.watch_timeout)
+
+
+# ------------------------------------------------------ ISO 8601 durations
+#: Days, hours, minutes and seconds only, as extension-params.schema.json allows.
+_DURATION = re.compile(r'^P(?!$)(?:(\d+)D)?(?:T(?=\d)(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$')
+
+
+def parse_duration(text: str) -> timedelta:
+    """``'P7D'`` -> ``timedelta(days=7)``; ``'PT12H'`` -> 12 hours.
+
+    Raises:
+        ValueError: `text` is not a duration in days, hours, minutes and seconds.
+    """
+    match = _DURATION.match(text)
+    if match is None:
+        raise ValueError(f'Not an ISO 8601 duration in days, hours, minutes and seconds: {text!r}')
+    days, hours, minutes, seconds = (int(value or 0) for value in match.groups())
+    return timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
+
+
+def format_duration(duration: timedelta) -> str:
+    """``timedelta(days=7)`` -> ``'P7D'``; 90 minutes -> ``'PT1H30M'``.
+
+    Raises:
+        ValueError: the duration is negative or not a whole number of seconds.
+    """
+    if duration < timedelta(0) or duration.microseconds:
+        raise ValueError(f'Durations must be a whole, non-negative number of seconds: {duration}')
+    hours, rest = divmod(duration.seconds, 3600)
+    minutes, seconds = divmod(rest, 60)
+    date = f'{duration.days}D' if duration.days else ''
+    time = ''.join(
+        f'{value}{unit}' for value, unit in ((hours, 'H'), (minutes, 'M'), (seconds, 'S')) if value
+    )
+    if not date and not time:
+        return 'PT0S'
+    return f'P{date}' + (f'T{time}' if time else '')

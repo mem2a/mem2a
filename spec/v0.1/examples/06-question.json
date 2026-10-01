@@ -25,13 +25,17 @@
                 "data": {
                   "action": "update_leadership",
                   "summary": "Update leadership on the Titan delay",
-                  "entities": ["project:titan"],
+                  "entities": [
+                    "project:titan"
+                  ],
                   "onBehalfOf": "user:maya",
                   "draft": "Titan will ship three weeks late, on November 20. The integration tests found a data migration issue that needs a rewrite."
                 }
               }
             ],
-            "extensions": ["https://w3id.org/mem2a/v0.1"]
+            "extensions": [
+              "https://w3id.org/mem2a/v0.1"
+            ]
           }
         }
       }
@@ -57,20 +61,29 @@
                 "contextId": "ctx-maya-titan",
                 "role": "ROLE_AGENT",
                 "parts": [
-                  { "text": "Before I pull this together: is the new date funded?" },
+                  {
+                    "text": "Before I pull this together: is the new date funded?"
+                  },
                   {
                     "mediaType": "application/vnd.mem2a.question+json",
                     "data": {
                       "id": "q-1",
                       "text": "Is the new date funded?",
-                      "options": ["Yes", "No", "Partly"]
+                      "options": [
+                        "Yes",
+                        "No",
+                        "Partly"
+                      ]
                     }
                   }
                 ],
                 "metadata": {
-                  "https://w3id.org/mem2a/v0.1/phase": "question"
+                  "https://w3id.org/mem2a/v0.1/phase": "question",
+                  "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-maya-001"
                 },
-                "extensions": ["https://w3id.org/mem2a/v0.1"]
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
               },
               "timestamp": "2026-09-29T16:40:03Z"
             },
@@ -86,13 +99,17 @@
                     "data": {
                       "action": "update_leadership",
                       "summary": "Update leadership on the Titan delay",
-                      "entities": ["project:titan"],
+                      "entities": [
+                        "project:titan"
+                      ],
                       "onBehalfOf": "user:maya",
                       "draft": "Titan will ship three weeks late, on November 20. The integration tests found a data migration issue that needs a rewrite."
                     }
                   }
                 ],
-                "extensions": ["https://w3id.org/mem2a/v0.1"]
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
               }
             ]
           }

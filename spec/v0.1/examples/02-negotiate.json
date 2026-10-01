@@ -25,20 +25,25 @@
                 "data": {
                   "action": "send_quote",
                   "summary": "Send Acme a renewal quote",
-                  "entities": ["account:acme", "doc:acme-renewal-quote"],
+                  "entities": [
+                    "account:acme",
+                    "doc:acme-renewal-quote"
+                  ],
                   "onBehalfOf": "user:tom",
                   "deadline": "2026-09-30T17:00:00Z"
                 }
               }
             ],
-            "extensions": ["https://w3id.org/mem2a/v0.1"]
+            "extensions": [
+              "https://w3id.org/mem2a/v0.1"
+            ]
           },
           "configuration": {
             "taskPushNotificationConfig": {
               "url": "https://sales-assistant.example.com/a2a/callbacks",
               "authentication": {
                 "scheme": "Bearer",
-                "credentials": "<single-use secret for this task>"
+                "credentials": "<secret for this task>"
               }
             }
           }
@@ -66,12 +71,17 @@
                 "contextId": "ctx-tom-acme",
                 "role": "ROLE_AGENT",
                 "parts": [
-                  { "text": "Hold the quote: legal paused Acme pricing on Friday. I'll call back if that changes." }
+                  {
+                    "text": "Hold the quote: legal paused Acme pricing on Friday. I'll call back if that changes."
+                  }
                 ],
                 "metadata": {
-                  "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit"
+                  "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit",
+                  "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-tom-001"
                 },
-                "extensions": ["https://w3id.org/mem2a/v0.1"]
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
               },
               "timestamp": "2026-09-28T09:10:02Z"
             },
@@ -98,8 +108,9 @@
                             "title": "Legal weekly",
                             "at": "2026-09-25T17:00:00Z"
                           },
-                          "entities": ["account:acme"],
-                          "visibility": ["group:sales", "group:legal"]
+                          "entities": [
+                            "account:acme"
+                          ]
                         },
                         {
                           "id": "f-208",
@@ -111,12 +122,15 @@
                             "kind": "record",
                             "ref": "crm:opportunity/acme-renewal-2026"
                           },
-                          "entities": ["account:acme"]
+                          "entities": [
+                            "account:acme"
+                          ]
                         }
                       ],
                       "precedent": [
                         {
                           "id": "p-4",
+                          "version": "1",
                           "statement": "In June, a renewal quote sent to Globex during a legal review had to be withdrawn.",
                           "relevance": "Same situation: pricing sent while legal was still reviewing.",
                           "source": {
@@ -130,18 +144,28 @@
                       "constraints": [
                         {
                           "id": "c-17",
+                          "version": "1",
                           "statement": "Do not send Acme new pricing until legal clears it.",
                           "level": "must",
-                          "basis": ["f-311"],
+                          "basis": [
+                            "f-311"
+                          ],
                           "until": "Legal clears Acme pricing."
                         }
                       ],
-                      "watching": ["f-311", "f-208", "p-4", "c-17"],
+                      "watching": [
+                        "f-311",
+                        "f-208",
+                        "p-4",
+                        "c-17"
+                      ],
                       "expiresAt": "2026-10-05T09:10:02Z"
                     }
                   }
                 ],
-                "extensions": ["https://w3id.org/mem2a/v0.1"]
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
               }
             ],
             "history": [
@@ -156,13 +180,18 @@
                     "data": {
                       "action": "send_quote",
                       "summary": "Send Acme a renewal quote",
-                      "entities": ["account:acme", "doc:acme-renewal-quote"],
+                      "entities": [
+                        "account:acme",
+                        "doc:acme-renewal-quote"
+                      ],
                       "onBehalfOf": "user:tom",
                       "deadline": "2026-09-30T17:00:00Z"
                     }
                   }
                 ],
-                "extensions": ["https://w3id.org/mem2a/v0.1"]
+                "extensions": [
+                  "https://w3id.org/mem2a/v0.1"
+                ]
               }
             ]
           }

@@ -6,6 +6,9 @@
 * `mem2a.server`: serves an engine as an A2A JSON-RPC agent.
 * `mem2a.client`: a small client for acting agents.
 * `mem2a.models` and `mem2a.validation`: the payloads and their JSON Schemas.
+* `mem2a.seeds`: the spec's stories as sample memories; `mem2a.admin`: the
+  sandbox's admin routes; `mem2a.cli` and `mem2a.conform`: the ``mem2a`` and
+  ``mem2a-conform`` commands.
 """
 
 from mem2a.auth import AuthenticationError, Authenticator, DevTokenAuthenticator, Identity
@@ -23,15 +26,18 @@ from mem2a.client import (
     text_of,
     update_of,
 )
-from mem2a.constants import EXTENSION_URI, PHASE_KEY, SPEC_VERSION
-from mem2a.engine import MemoryEngine, Relevance, Reply
-from mem2a.server import Mem2AServer, create_app
+from mem2a.constants import EXTENSION_URI, IN_REPLY_TO_KEY, PHASE_KEY, SPEC_VERSION
+from mem2a.engine import MemoryEngine, Reply, When
+from mem2a.models import format_duration, parse_duration
+from mem2a.server import LOCALHOST_ORIGINS, Mem2AServer, PushPolicy, create_app
 
 
 __version__ = '0.1.0.dev0'
 
 __all__ = [
     'EXTENSION_URI',
+    'IN_REPLY_TO_KEY',
+    'LOCALHOST_ORIGINS',
     'PHASE_KEY',
     'SPEC_VERSION',
     'AuthenticationError',
@@ -41,14 +47,17 @@ __all__ = [
     'Mem2AClient',
     'Mem2AServer',
     'MemoryEngine',
+    'PushPolicy',
     'PushTarget',
-    'Relevance',
     'Reply',
+    'When',
     'build_agent_card',
     'create_app',
     'dossier_of',
     'error_of',
+    'format_duration',
     'mem2a_params',
+    'parse_duration',
     'parse_push',
     'phase_of',
     'question_of',

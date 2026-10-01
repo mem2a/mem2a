@@ -29,4 +29,13 @@ Maya's agent is about to tell leadership that project Titan will ship three week
 | --- | --- | --- |
 | [08-refusal.json](08-refusal.json) | Negotiate | The intent names Tom, but the credentials are Priya's. Memory refuses without revealing anything about Tom. |
 
+## Priya's side, and the other calls
+
+| File | Step | What happens |
+| --- | --- | --- |
+| [09-listen-stream-claim.json](09-listen-stream-claim.json) | Listen | Priya's agent keeps a `SubscribeToTask` stream open. When Tom's agent commits, her dossier becomes version 15, with Tom's report as an unconfirmed claim. |
+| [10-read-callback-cancel.json](10-read-callback-cancel.json) | Read, cancel | `GetTask` to read the current dossier before acting, `CreateTaskPushNotificationConfig` to add a callback, and `CancelTask` when Priya's agent decides not to follow up. |
+
+To send these requests yourself against a sandbox memory, see the [wire quickstart](../../../docs/wire-quickstart.md).
+
 Tokens, secrets and ids are placeholders.

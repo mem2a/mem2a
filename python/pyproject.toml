@@ -37,16 +37,24 @@ dependencies = [
   "rfc3986-validator>=0.1.1",
   "starlette>=0.40",
   "typing-extensions>=4.6",
+  # `mem2a serve` and the conformance runner's webhook.
+  "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
-server = ["uvicorn>=0.30"]
 dev = [
+  "mypy>=1.11",
   "pytest>=8",
   "pytest-asyncio>=0.24",
-  "rfc3339-validator>=0.1.4",
-  "uvicorn>=0.30",
+  "ruff>=0.6",
+  # Stubs, so that `mypy --strict python/src` works without this file's config.
+  "types-jsonschema",
+  "types-protobuf",
 ]
+
+[project.scripts]
+mem2a = "mem2a.cli:main"
+mem2a-conform = "mem2a.conform:main"
 
 [project.urls]
 Specification = "https://w3id.org/mem2a/v0.1"
@@ -74,6 +82,7 @@ lines-after-imports = 2
 
 [tool.ruff.format]
 quote-style = "single"
+exclude = ["*.md"]  # README samples are laid out for reading
 
 [tool.mypy]
 python_version = "3.10"

@@ -4,27 +4,40 @@
   "title": "Mem2A extension params",
   "description": "The `params` object of the Mem2A entry in a memory's Agent Card (`capabilities.extensions[]`).",
   "type": "object",
-  "required": ["specVersion", "listen"],
+  "required": [
+    "specVersion",
+    "listen"
+  ],
   "additionalProperties": false,
   "properties": {
-    "specVersion": { "const": "0.1" },
+    "specVersion": {
+      "const": "0.1"
+    },
     "listen": {
       "description": "How agents can receive updates while a task is open: `push` (A2A push notifications) and/or `subscribe` (A2A SubscribeToTask).",
       "type": "array",
-      "items": { "type": "string", "enum": ["push", "subscribe"] },
+      "items": {
+        "type": "string",
+        "enum": [
+          "push",
+          "subscribe"
+        ]
+      },
       "minItems": 1,
       "uniqueItems": true
     },
-    "watchTimeoutSeconds": {
-      "description": "How long memory keeps a task open waiting for a commit. Omitted means memory does not expire watches on its own.",
-      "type": "number",
-      "minimum": 60,
-      "multipleOf": 1
+    "watchTimeout": {
+      "description": "How long memory keeps a task open waiting for a commit, as an ISO 8601 duration in days, hours, minutes and seconds (for example `P7D` or `PT12H`). Omitted means memory does not expire watches on its own.",
+      "type": "string",
+      "pattern": "^P(?!$)(\\d+D)?(T(?=\\d)(\\d+H)?(\\d+M)?(\\d+S)?)?$"
     },
     "entityTypes": {
       "description": "Optional hint: entity types memory knows about, for example `account`, `project`, `doc`.",
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "uniqueItems": true
     }
   }

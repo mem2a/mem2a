@@ -70,7 +70,37 @@
                 "role": "ROLE_AGENT",
                 "parts": [
                   {
-                    "text": "Not recorded: your commit is based on dossier 12, but the current version is 13."
+                    "text": "Not recorded: your commit is based on dossier 12, but the current version is 13. Legal cleared Acme pricing since then."
+                  },
+                  {
+                    "mediaType": "application/vnd.mem2a.update+json",
+                    "data": {
+                      "dossierVersion": "13",
+                      "previousVersion": "12",
+                      "summary": "Legal cleared Acme pricing.",
+                      "changes": [
+                        {
+                          "id": "f-340",
+                          "kind": "fact",
+                          "change": "added"
+                        },
+                        {
+                          "id": "f-311",
+                          "kind": "fact",
+                          "change": "removed"
+                        },
+                        {
+                          "id": "c-17",
+                          "kind": "constraint",
+                          "change": "removed"
+                        },
+                        {
+                          "id": "p-4",
+                          "kind": "precedent",
+                          "change": "removed"
+                        }
+                      ]
+                    }
                   },
                   {
                     "mediaType": "application/vnd.mem2a.error+json",
@@ -82,7 +112,8 @@
                   }
                 ],
                 "metadata": {
-                  "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit"
+                  "https://w3id.org/mem2a/v0.1/phase": "awaiting-commit",
+                  "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-tom-002"
                 },
                 "extensions": [
                   "https://w3id.org/mem2a/v0.1"
@@ -118,10 +149,6 @@
                           ],
                           "supersedes": [
                             "f-311"
-                          ],
-                          "visibility": [
-                            "group:sales",
-                            "group:legal"
                           ]
                         },
                         {

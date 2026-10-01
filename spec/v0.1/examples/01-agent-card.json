@@ -26,9 +26,17 @@
           "required": true,
           "params": {
             "specVersion": "0.1",
-            "listen": ["push", "subscribe"],
-            "watchTimeoutSeconds": 604800,
-            "entityTypes": ["account", "doc", "project", "person"]
+            "listen": [
+              "push",
+              "subscribe"
+            ],
+            "watchTimeout": "P7D",
+            "entityTypes": [
+              "account",
+              "doc",
+              "project",
+              "person"
+            ]
           }
         }
       ]
@@ -44,28 +52,63 @@
     "securityRequirements": [
       {
         "schemes": {
-          "company-sso": { "list": ["memory.negotiate", "memory.commit"] }
+          "company-sso": {
+            "list": [
+              "memory.negotiate",
+              "memory.commit"
+            ]
+          }
         }
       }
     ],
-    "defaultInputModes": ["application/json"],
-    "defaultOutputModes": ["application/json", "text/plain"],
+    "defaultInputModes": [
+      "application/vnd.mem2a.intent+json",
+      "application/vnd.mem2a.answer+json",
+      "application/vnd.mem2a.commit+json",
+      "text/plain"
+    ],
+    "defaultOutputModes": [
+      "application/vnd.mem2a.dossier+json",
+      "application/vnd.mem2a.question+json",
+      "application/vnd.mem2a.update+json",
+      "application/vnd.mem2a.receipt+json",
+      "application/vnd.mem2a.error+json",
+      "text/plain"
+    ],
     "skills": [
       {
         "id": "negotiate",
         "name": "Negotiate",
         "description": "Before acting, send an intent (what, which things, for whom). Get back a dossier, a question, or a refusal.",
-        "tags": ["mem2a", "memory"],
-        "inputModes": ["application/vnd.mem2a.intent+json", "application/vnd.mem2a.answer+json"],
-        "outputModes": ["application/vnd.mem2a.dossier+json", "application/vnd.mem2a.question+json", "application/vnd.mem2a.error+json"]
+        "tags": [
+          "mem2a",
+          "memory"
+        ],
+        "inputModes": [
+          "application/vnd.mem2a.intent+json",
+          "application/vnd.mem2a.answer+json"
+        ],
+        "outputModes": [
+          "application/vnd.mem2a.dossier+json",
+          "application/vnd.mem2a.question+json",
+          "application/vnd.mem2a.error+json"
+        ]
       },
       {
         "id": "commit",
         "name": "Commit",
         "description": "After acting, report what you did against the dossier version you relied on.",
-        "tags": ["mem2a", "memory"],
-        "inputModes": ["application/vnd.mem2a.commit+json"],
-        "outputModes": ["application/vnd.mem2a.receipt+json", "application/vnd.mem2a.error+json"]
+        "tags": [
+          "mem2a",
+          "memory"
+        ],
+        "inputModes": [
+          "application/vnd.mem2a.commit+json"
+        ],
+        "outputModes": [
+          "application/vnd.mem2a.receipt+json",
+          "application/vnd.mem2a.error+json"
+        ]
       }
     ]
   }

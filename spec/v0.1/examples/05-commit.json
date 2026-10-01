@@ -77,11 +77,12 @@
                 "role": "ROLE_AGENT",
                 "parts": [
                   {
-                    "text": "Recorded as a claim until the CRM or a person confirms it. Agents watching Acme have been told."
+                    "text": "Recorded as a claim until the CRM or a person confirms it."
                   }
                 ],
                 "metadata": {
-                  "https://w3id.org/mem2a/v0.1/phase": "committed"
+                  "https://w3id.org/mem2a/v0.1/phase": "committed",
+                  "https://w3id.org/mem2a/v0.1/inReplyTo": "msg-tom-003"
                 },
                 "extensions": [
                   "https://w3id.org/mem2a/v0.1"
@@ -117,10 +118,6 @@
                           ],
                           "supersedes": [
                             "f-311"
-                          ],
-                          "visibility": [
-                            "group:sales",
-                            "group:legal"
                           ]
                         },
                         {
@@ -168,7 +165,7 @@
                           "status": "claim"
                         }
                       ],
-                      "conflictsRecorded": 0,
+                      "conflicts": [],
                       "at": "2026-09-28T15:20:30Z"
                     }
                   }
