@@ -1,86 +1,43 @@
-# Mem2A
+<p align="center">
+  <img src="docs/assets/brand/mem2a-icon.svg" width="88" height="88" alt="Mem2A">
+</p>
 
-**Your agents don't know what they shouldn't do. Mem2A is an open protocol that tells them, before they act.**
+<h1 align="center">Memory-to-Agent (Mem2A) Protocol</h1>
 
-[![CI](https://github.com/mem2a/mem2a/actions/workflows/ci.yml/badge.svg)](https://github.com/mem2a/mem2a/actions/workflows/ci.yml) · Draft 0.1, open for review · [Apache 2.0](LICENSE)
+<p align="center">
+  <strong>An open protocol that lets any AI agent consult a company's shared memory before it acts, hear when that changes, and report back after.</strong>
+</p>
 
-Legal paused Acme's pricing on Friday. Priya's agent knows. Tom's agent doesn't, and sends Acme the old quote.
+<p align="center">
+  <a href="https://github.com/mem2a/mem2a/actions/workflows/ci.yml"><img src="https://github.com/mem2a/mem2a/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="spec/v0.1/mem2a.md"><img src="https://img.shields.io/badge/spec-0.1%20draft-0b5563" alt="Specification: 0.1 draft"></a>
+  <a href="https://a2a-protocol.org/"><img src="https://img.shields.io/badge/A2A-v1.0%20extension-0b5563" alt="A2A v1.0 extension"></a>
+  <a href="python"><img src="https://img.shields.io/badge/python-3.10%2B-0b5563" alt="Python 3.10+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-0b5563" alt="License: Apache 2.0"></a>
+</p>
 
-Every employee is about to bring an AI agent to work. It's bring-your-own-device all over again, except this time the devices make decisions, and each one remembers only its own user. Mem2A gives every agent, whoever built it, one habit:
+Companies are filling up with AI agents: personal agents that employees bring to work, agents built by internal teams, and agents that ship inside SaaS products. Each remembers only its own user or task. None of them shares a view of what the company has decided, so they act on different versions of the truth and on rules nobody told them about.
 
-1. **Before acting,** it tells the company's memory what it's about to do and for whom. Memory answers with what the agent needs to know: the facts, the precedent, and the rules that apply right now.
-2. **While it works,** memory calls back if any of that changes.
-3. **After acting,** it reports what it did. Memory records that as a claim until a person or a system of record confirms it.
+Mem2A gives every agent, whoever built it, one shared, company-owned memory to check with. With Mem2A, agents can:
 
-Bring your own memory: Mem2A is only how agents talk to it. It's an extension to [A2A](https://a2a-protocol.org/), the open protocol agents already use to talk to each other.
+- **Learn what bears on an action before taking it:** the facts, precedent and rules that apply right now, filtered to what the person behind the agent may see.
+- **Hear when that changes,** without asking again: memory speaks first.
+- **Report what they did,** recorded as claims until a person or a system of record confirms them.
+- **Do it with any vendor:** Mem2A is an extension of [A2A](https://a2a-protocol.org/), so any agent that speaks A2A can use any memory that implements Mem2A.
 
-> MCP gave agents hands. A2A gave them a voice. Mem2A gives them judgment.
+## Why Mem2A?
 
-## See it work
+Your agents don't know what they shouldn't do. Legal paused a customer's pricing on Friday; one agent knows, another doesn't, and sends the old quote.
 
-```sh
-git clone https://github.com/mem2a/mem2a && cd mem2a
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e "python[dev]"
-python examples/acme-quote/demo.py
-```
+- **Search can't fix it.** Retrieval answers the questions an agent asks. These failures come from questions it didn't know to ask.
+- **Each vendor's memory can't fix it.** Ten agent vendors means ten versions of the truth, and the company starts over every time it switches.
+- **It has been solved before.** Phones became safe for work once there was a standard way to give every device the company's rules. Agents need the same for what a company knows and has decided.
 
-```
-    tom | About to send Acme a renewal quote. Asking memory first.
- memory | dossier 12, awaiting-commit: "Hold: Do not send Acme new pricing until legal clears it."
-        |   fact f-311 (confirmed by user:general-counsel): Legal paused new pricing for Acme on Friday, pending a contract review.
-        |   MUST c-17: Do not send Acme new pricing until legal clears it. (basis: f-311)
-    tom | Holding the quote. Memory will call my webhook if this changes.
-
-  legal | Approves Acme pricing at $1.2M a year (f-340 supersedes f-311).
- memory | push to tom: dossier 13 replaces 12.
-        |   + fact f-340 (confirmed by user:general-counsel): Legal approved Acme renewal pricing at $1.2M a year.
-        |   - constraint c-17
-    tom | Reads dossier 13 before acting: no constraints left. Sending the quote.
-
-  priya | About to draft a follow-up to Acme. Asking memory first.
- memory | dossier 14: "Nothing here blocks this. Latest: Legal approved Acme renewal pricing at $1.2M a year."
-
-    tom | Quote sent. Committing against dossier 13.
- memory | receipt cm-1: f-341 recorded as a claim.
- memory | stream to priya: dossier 15 replaces 14.
-        |   + fact f-341 (claim by user:tom): Tom sent Acme a renewal quote at $1.2M a year.
-
-    crm | The CRM shows the quote went out: confirms f-341.
- memory | stream to priya: dossier 16 replaces 15.
-        |   ~ fact f-341 (confirmed by system:crm): Tom sent Acme a renewal quote at $1.2M a year.
-  priya | Tom already sent the quote, so no follow-up now. Canceling.
-```
-
-(Trimmed. The demo prints the first dossier in full, then every change to it. The CRM's confirmation goes through the sandbox's admin routes: how claims get confirmed is outside Mem2A 0.1, and an [open question](https://github.com/mem2a/mem2a/issues/3).)
-
-Prefer curl, JavaScript or Go? Start a sandbox memory with `mem2a serve --seed acme --dev-admin` and follow the [wire quickstart](docs/wire-quickstart.md): every request, ready to paste.
-
-## Take part
-
-Mem2A is a draft, and now is the cheapest time to change it.
-
-**In five minutes, no code needed**
-
-- **Seen an agent do something it shouldn't have?** [Tell us in three questions](https://github.com/mem2a/mem2a/issues/new?template=use-case.yml).
-- **Have an opinion?** Weigh in on an [open question](https://github.com/mem2a/mem2a/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+question%22), such as [how claims get confirmed](https://github.com/mem2a/mem2a/issues/3) or [what rules should look like](https://github.com/mem2a/mem2a/issues/4).
-- **Running agents from more than one vendor?** [Become a design partner](https://github.com/mem2a/mem2a/issues/new?template=design-partner.yml).
-- **Prefer to talk privately?** [Contact the team at Sentra](https://www.sentra.app/contact), who maintain Mem2A.
-- **Star the repo** to follow the draft to 1.0.
-
-**If you build things**
-
-| You are | Start here |
-| --- | --- |
-| Building an agent | [Write an agent in Python](python/README.md#write-an-agent) · [a complete sales agent](examples/sales-agent) · [the wire quickstart](docs/wire-quickstart.md), for any language |
-| Building a memory or knowledge graph | [The implementer's guide](docs/implementers-guide.md) · [test yours with `mem2a-conform`](python/README.md#test-your-own-memory) · [get listed](IMPLEMENTATIONS.md) |
-| Into protocols and standards | [The spec](spec/v0.1/mem2a.md) · [propose a change](https://github.com/mem2a/mem2a/issues/new?template=spec-change.yml) · [how decisions get made](GOVERNANCE.md) |
-| Into security | [The threat model](docs/threat-model.md) · [try to break the claims model](SECURITY.md) |
-| After a first contribution | [Good first issues](https://github.com/mem2a/mem2a/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) · [help wanted](https://github.com/mem2a/mem2a/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) · [CONTRIBUTING.md](CONTRIBUTING.md) |
+[Read the full case](docs/why.md).
 
 ## How it works
 
-Memory is an ordinary A2A agent, and each action is one A2A task.
+Memory is an ordinary A2A agent, and each action an agent takes is one A2A task.
 
 ```mermaid
 sequenceDiagram
@@ -103,56 +60,53 @@ sequenceDiagram
 | **Listen** | While the task is open, memory sends a new dossier version whenever something the agent relied on changes. |
 | **Commit** | The agent reports what it did, against the latest version it has read. Memory records it as a **claim** and tells the other agents watching the same things, if they may see it. |
 
-The rules that keep it safe:
+## Key features
 
-- **Claims aren't facts.** Only a person or a system of record can confirm what an agent reports, so one compromised agent can't plant a fact everyone trusts.
-- **Rules only come from confirmed things.** An instruction smuggled into one agent can't become every agent's rule.
-- **Permissions follow the source.** If Tom couldn't read the email a fact came from, his agent never sees the fact.
-- **Memory advises; something else enforces.** Stopping an agent that ignores its dossier is the job of a sandbox or watchdog.
-- **Stale reports are refused.** No action is recorded against information that has since changed until the agent has seen the change.
+- **Built on A2A v1.0.** A profile extension: no new methods and no new task states, over JSON-RPC, gRPC or HTTP+JSON.
+- **Versioned dossiers.** Every fact, precedent and constraint has an id, a version and a source a person can trace.
+- **Memory speaks first.** Updates arrive by push notification or stream; agents read the current version before acting.
+- **Claims aren't facts.** What agents report never becomes a rule, never lifts one, and never confirms itself.
+- **Permissions follow the source.** An agent never sees what its user couldn't read, checked every time memory sends anything.
+- **Ready for enforcement.** Gateways, sandboxes and watchdogs can consult the same memory and stop what an agent shouldn't do.
 
-More: [how it works](docs/how-it-works.md), message by message in [the examples](spec/v0.1/examples), and every rule in [the spec](spec/v0.1/mem2a.md). New to A2A? The [A2A primer](docs/a2a-primer.md) covers what Mem2A uses, the [glossary](docs/glossary.md) defines every term, and the [docs](docs) suggest a reading order.
+## Getting started
 
-## What Mem2A is, and isn't
+- **See it in action.** Two agents and a memory, in one command:
 
-- **It is** a protocol for agents to consult and update a shared company memory, built as an A2A extension.
-- **It isn't** a memory product. Bring your own memory system; Mem2A defines how agents talk to it.
-- **It isn't** a replacement for MCP or A2A. It sits alongside them.
-- **It isn't** a boss agent. Memory never hands out work.
-- **It isn't** an enforcement layer. Memory carries the rules; something outside the agent's reach enforces them.
+  ```sh
+  git clone https://github.com/mem2a/mem2a && cd mem2a
+  python3 -m venv .venv && . .venv/bin/activate
+  pip install -e "python[dev]"
+  python examples/acme-quote/demo.py
+  ```
 
-## Why now
+- **Read the documentation:** [how it works](docs/how-it-works.md), the [A2A primer](docs/a2a-primer.md) and the [glossary](docs/glossary.md), with a suggested [reading order](docs/README.md).
+- **Read the specification:** [Mem2A 0.1](spec/v0.1/mem2a.md), with normative [JSON Schemas](spec/v0.1/schemas) and [worked examples](spec/v0.1/examples).
+- **Build an agent:** the [Python SDK](python/README.md#write-an-agent), or plain HTTP from any language with the [wire quickstart](docs/wire-quickstart.md).
+- **Build a memory:** the [implementer's guide](docs/implementers-guide.md), then test it from the outside with [`mem2a-conform`](python/README.md#test-your-own-memory).
+- **Run a tool gateway:** enforce memory for agents that don't speak Mem2A yet, with the [tool gateway example](examples/tool-gateway).
 
-In September 2026, OpenAI [held back a flagship model](https://www.aljazeera.com/economy/2026/9/29/openai-scraps-release-of-latest-ai-model-over-safety-concerns) over "scope and authorization", and [demonstrated a prompt injection that copies itself](https://lastweekin.ai/p/last-week-in-ai-345-5-new-models) from one agent to the next. Personal agents are arriving at work anyway. When phones did the same, companies could say yes only once phones had a standard way to receive the company's rules. Agents need the same thing for what the company knows and has decided. [The full case](docs/why.md).
+[Who Mem2A is for](docs/ecosystem.md) explains what each kind of participant builds and gets: companies running agents, agent builders, memory providers, tool and integration platforms, and security vendors.
 
-## Status
+## Contributing
 
-Draft 0.1. What exists today:
+Mem2A is a draft, and now is the cheapest time to change it.
 
-- the [specification](spec/v0.1/mem2a.md), with normative [JSON Schemas](spec/v0.1/schemas) and [worked examples](spec/v0.1/examples);
-- a [reference memory and agent client in Python](python), on the official A2A SDK;
-- `mem2a-conform`, which checks a running memory against much of the spec;
-- a [threat model](docs/threat-model.md), and [design decision records](adrs).
+- **Questions and proposals:** open an [issue](https://github.com/mem2a/mem2a/issues), or weigh in on an [open question](https://github.com/mem2a/mem2a/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+question%22).
+- **Use cases:** [tell us about an agent that did something it shouldn't have](https://github.com/mem2a/mem2a/issues/new?template=use-case.yml).
+- **Design partners:** running agents from more than one vendor? [Try Mem2A with us](https://github.com/mem2a/mem2a/issues/new?template=design-partner.yml).
+- **Contribution guide:** see [CONTRIBUTING.md](CONTRIBUTING.md), and start with a [good first issue](https://github.com/mem2a/mem2a/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+- **Private feedback:** use [Sentra's contact page](https://www.sentra.app/contact). Security problems go through [SECURITY.md](SECURITY.md).
 
-What's next is on the [roadmap](docs/roadmap.md).
+## What's next
 
-## Who's behind it
+- An identity profile for delegated tokens and chains of actors ([#11](https://github.com/mem2a/mem2a/issues/11)).
+- A profile for gateways that speak Mem2A on an agent's behalf ([#23](https://github.com/mem2a/mem2a/issues/23)).
+- A TypeScript client and the schemas on npm ([#13](https://github.com/mem2a/mem2a/issues/13), [#14](https://github.com/mem2a/mem2a/issues/14)), and the Python package on PyPI ([#22](https://github.com/mem2a/mem2a/issues/22)).
+- A proposal to the A2A project, to make Mem2A an official extension.
 
-Mem2A was started by the team at [Sentra](https://sentra.app), who build company memory. It isn't tied to any product: it's Apache 2.0, conformance is judged against the spec rather than any implementation, and we intend to propose it to the A2A project. We're looking for [co-maintainers from other companies](https://github.com/mem2a/mem2a/issues/19).
+The [roadmap](docs/roadmap.md) has the details.
 
-To talk to us directly, about a design partnership, a deployment, or anything you'd rather not post in an issue, use [Sentra's contact page](https://www.sentra.app/contact). The [maintainers](MAINTAINERS.md) are listed with their GitHub handles.
+## About
 
-## What's in this repo
-
-| Path | What it is |
-| --- | --- |
-| [`spec/v0.1`](spec/v0.1) | The specification, schemas and worked examples. |
-| [`python`](python) | The reference memory, agent client, sandbox server and `mem2a-conform`. |
-| [`examples`](examples) | The Acme story in one command, and a standalone sales agent. |
-| [`conformance`](conformance) | Checks that the spec's examples follow its rules. |
-| [`docs`](docs) | Why, how it works, an A2A primer, a glossary, the wire quickstart, the implementer's guide, the threat model, the FAQ and the roadmap. |
-| [`adrs`](adrs) | Why the design is the way it is. |
-
-## License
-
-[Apache 2.0](LICENSE)
+Mem2A was started by the team at [Sentra](https://sentra.app), who build company memory. It isn't tied to any product: it's licensed under the [Apache License 2.0](LICENSE), conformance is judged against the specification rather than any implementation, and decisions follow an open [governance process](GOVERNANCE.md). We intend to propose it to the A2A project, and we're looking for [co-maintainers from other companies](https://github.com/mem2a/mem2a/issues/19).

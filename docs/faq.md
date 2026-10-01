@@ -46,7 +46,7 @@ No. Mem2A is an open specification under Apache 2.0, and it doesn't care how a m
 
 ### How do I get involved?
 
-See [Take part](../README.md#take-part) in the README. The shortest path is to tell us about [an agent that did something it shouldn't have](https://github.com/mem2a/mem2a/issues/new?template=use-case.yml).
+See [Take part](community/index.md). The shortest path is to tell us about [an agent that did something it shouldn't have](https://github.com/mem2a/mem2a/issues/new?template=use-case.yml).
 
 ### Why "Mem2A"?
 

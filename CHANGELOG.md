@@ -35,6 +35,10 @@
 
 - Contributor guide, governance, security policy, threat model, implementer's guide and wire quickstart.
 - An A2A primer, a glossary, and a suggested reading order in [docs](docs).
+- A documentation site built from the repository with Material for MkDocs ([`mkdocs.yml`](mkdocs.yml)): the spec, its schemas and examples rendered as pages, published to GitHub Pages once the repository is public.
+- A logo and brand assets in [`docs/assets/brand`](docs/assets/brand).
+- [Who it's for](docs/ecosystem.md): what companies, agent builders, memory providers, tool platforms and security vendors each build and get.
+- A [tool gateway example](examples/tool-gateway) that holds tool calls a `must` constraint forbids and reports what ran, for agents with no Mem2A code; and an open question on a gateway profile ([#23](https://github.com/mem2a/mem2a/issues/23)).
 - A private contact route, through [Sentra's contact page](https://www.sentra.app/contact).
 - Issue templates for use cases, failure modes, questions, design partners, spec changes and interop reports.
 - Starter issues for every open question, and good first issues.

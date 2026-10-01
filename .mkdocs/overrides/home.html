@@ -1,0 +1,55 @@
+{% extends "main.html" %}
+
+{% block tabs %}
+  {{ super() }}
+  <section class="m2a-hero">
+    <div class="md-grid m2a-hero__grid">
+      <div class="m2a-hero__copy">
+        <h1>Agents check with company memory before they act.</h1>
+        <p class="m2a-hero__lede">
+          Mem2A is an open protocol, built on <a href="https://a2a-protocol.org/">A2A</a>,
+          for any AI agent to ask a company's shared memory what it needs to know before an
+          action, hear when that changes, and report what it did.
+        </p>
+        <div class="m2a-hero__actions">
+          <a href="{{ 'specification/' | url }}" class="md-button md-button--primary">Read the specification</a>
+          <a href="{{ 'wire-quickstart/' | url }}" class="md-button">Try it in five minutes</a>
+        </div>
+        <p class="m2a-hero__meta">Draft 0.1, open for review. Apache 2.0.</p>
+      </div>
+
+      <figure class="m2a-dossier" aria-label="Memory's answer to Tom's agent. Dossier 12 says not to send Acme new pricing until legal clears it. When legal approves the pricing, memory sends dossier 13 without being asked, and the hold is gone.">
+        <div class="m2a-dossier__head" aria-hidden="true">
+          <span class="m2a-dossier__title">Dossier <span class="m2a-vs"><span class="m2a-v m2a-v--old">12</span><span class="m2a-v m2a-v--new">13</span></span></span>
+          <code>awaiting-commit</code>
+        </div>
+        <p class="m2a-dossier__intent" aria-hidden="true">For Tom's agent, about to send Acme a renewal quote</p>
+        <ul class="m2a-dossier__items" aria-hidden="true">
+          <li class="m2a-item m2a-item--gone">
+            <code class="m2a-tag m2a-tag--must">must</code>
+            <span>Do not send Acme new pricing until legal clears it.</span>
+          </li>
+          <li class="m2a-item m2a-item--gone">
+            <code class="m2a-tag">fact</code>
+            <span>Legal paused new pricing for Acme on Friday, pending a contract review.<small>Legal weekly, confirmed by the general counsel</small></span>
+          </li>
+          <li class="m2a-item m2a-item--arrives">
+            <code class="m2a-tag">fact</code>
+            <span>Legal approved Acme renewal pricing at $1.2M a year.<small>Email from legal, Monday 15:02</small></span>
+          </li>
+          <li class="m2a-item">
+            <code class="m2a-tag">fact</code>
+            <span>Acme's current contract renews on October 31.<small>CRM, confirmed by the system of record</small></span>
+          </li>
+        </ul>
+        <figcaption class="m2a-dossier__update">
+          Legal cleared the pricing, so memory sent version 13 without being asked. The hold is gone.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+{% endblock %}
+
+{% block content %}
+  {{ page.content }}
+{% endblock %}

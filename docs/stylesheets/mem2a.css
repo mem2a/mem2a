@@ -1,0 +1,562 @@
+/* Mem2A site theme, on top of Material for MkDocs.
+ *
+ * Ink is the brand: a deep teal for the header, links and the mark.
+ * Amber is the signal: the dot in the logo, a `must` rule, and the moment
+ * memory speaks first. It is used for nothing else.
+ */
+
+:root {
+  --m2a-ink: #0b5563;
+  --m2a-ink-deep: #073b45;
+  --m2a-ink-soft: #e7f0f2;
+  --m2a-amber: #f2a541;
+  --m2a-amber-text: #8a5300;
+  --m2a-amber-soft: #fdf2df;
+  --m2a-slate: #1a2b34;
+  --m2a-mist: #5f7580;
+  --m2a-rule: #dfe7ea;
+  --m2a-paper: #fbfcfc;
+}
+
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--m2a-ink);
+  --md-primary-fg-color--light: #3b7a86;
+  --md-primary-fg-color--dark: var(--m2a-ink-deep);
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.75);
+  --md-accent-fg-color: #0e7487;
+  --md-accent-fg-color--transparent: rgba(14, 116, 135, 0.1);
+  --md-accent-bg-color: #ffffff;
+  --md-typeset-color: var(--m2a-slate);
+  --md-typeset-a-color: #0b6576;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 196;
+  --md-primary-fg-color: #0a4049;
+  --md-primary-fg-color--light: #2e6c77;
+  --md-primary-fg-color--dark: #062c33;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.75);
+  --md-accent-fg-color: #63c7d6;
+  --md-accent-fg-color--transparent: rgba(99, 199, 214, 0.1);
+  --md-typeset-a-color: #6ccad8;
+  --m2a-rule: rgba(255, 255, 255, 0.12);
+  --m2a-mist: #9db0b8;
+}
+
+/* ------------------------------------------------------------ typography */
+.md-typeset h1,
+.md-typeset h2 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--md-typeset-color);
+}
+
+[data-md-color-scheme="slate"] .md-typeset h1,
+[data-md-color-scheme="slate"] .md-typeset h2 {
+  color: var(--md-default-fg-color);
+}
+
+.md-typeset h3 {
+  font-weight: 600;
+}
+
+.md-banner {
+  background-color: var(--m2a-ink-deep);
+}
+
+.md-footer {
+  background-color: var(--m2a-ink-deep);
+}
+
+.md-footer-meta {
+  background-color: #052d35;
+}
+
+[data-md-color-scheme="slate"] .md-footer,
+[data-md-color-scheme="slate"] .md-footer-meta {
+  background-color: #071d22;
+}
+
+.md-banner a {
+  color: var(--m2a-amber);
+  margin-left: 0.4em;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.md-header__title {
+  font-weight: 600;
+}
+
+/* A Markdown table whose header row is empty, like the spec's front matter. */
+.md-typeset thead:has(th:first-child:empty):has(th:last-child:empty) {
+  display: none;
+}
+
+/* Keep identifiers and types whole in reference tables. */
+.md-typeset td:first-child code,
+.md-typeset td:nth-child(2) code {
+  white-space: nowrap;
+  word-break: normal;
+}
+
+/* ------------------------------------------------------------------ hero */
+.m2a-hero {
+  background: var(--m2a-ink-deep);
+  color: #ffffff;
+  padding: 3.2rem 0 3.6rem;
+}
+
+.m2a-hero__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 3rem;
+  align-items: start;
+  padding: 0 1.2rem;
+}
+
+.m2a-hero h1 {
+  font-size: clamp(1.9rem, 1.2rem + 2.2vw, 2.75rem);
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 1rem;
+  max-width: 17ch;
+  color: #ffffff;
+}
+
+.m2a-hero__lede {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  max-width: 34em;
+  margin: 0 0 1.6rem;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.m2a-hero__lede a {
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.m2a-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.m2a-hero .md-button {
+  display: inline-block;
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 0.7em 1.4em;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 6px;
+  color: #ffffff;
+  transition: background-color 125ms, border-color 125ms, color 125ms;
+}
+
+.m2a-hero .md-button--primary {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: var(--m2a-ink-deep);
+}
+
+.m2a-hero .md-button:hover,
+.m2a-hero .md-button:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #ffffff;
+  color: #ffffff;
+}
+
+.m2a-hero .md-button--primary:hover,
+.m2a-hero .md-button--primary:focus-visible {
+  background: var(--m2a-ink-soft);
+  color: var(--m2a-ink-deep);
+}
+
+.m2a-hero a:focus-visible {
+  outline: 2px solid var(--m2a-amber);
+  outline-offset: 3px;
+}
+
+.m2a-hero__meta {
+  margin: 1.4rem 0 0;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+/* --------------------------------------------- the dossier, as memory sends it */
+.m2a-dossier {
+  margin: 0.5rem 0 0;
+  background: var(--m2a-paper);
+  color: var(--m2a-slate);
+  border-radius: 10px;
+  padding: 1rem 1.2rem 1.1rem;
+  box-shadow: 0 18px 40px rgba(2, 20, 24, 0.35);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.m2a-dossier__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.m2a-dossier__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.m2a-vs {
+  display: inline-grid;
+}
+
+.m2a-vs > .m2a-v {
+  grid-area: 1 / 1;
+}
+
+.m2a-vs > .m2a-v--new {
+  opacity: 0;
+}
+
+.m2a-dossier code {
+  font-family: var(--md-code-font-family);
+  font-size: 0.62rem;
+  background: var(--m2a-ink-soft);
+  color: var(--m2a-ink);
+  padding: 0.15em 0.5em;
+  border-radius: 4px;
+}
+
+.m2a-dossier__intent {
+  margin: 0.2rem 0 0.7rem;
+  color: #5f7580;
+}
+
+.m2a-dossier__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.m2a-item {
+  display: grid;
+  grid-template-columns: 4.2em minmax(0, 1fr);
+  gap: 0.7em;
+  align-items: baseline;
+  border-top: 1px solid #dfe7ea;
+  padding: 0.6em 0;
+  max-height: 8em;
+  overflow: hidden;
+}
+
+.m2a-item small {
+  display: block;
+  margin-top: 0.2em;
+  color: #5f7580;
+  font-size: 0.92em;
+}
+
+.m2a-dossier .m2a-tag {
+  justify-self: start;
+  background: #eef3f5;
+  color: #35505b;
+}
+
+.m2a-dossier .m2a-tag--must {
+  background: var(--m2a-amber-soft);
+  color: var(--m2a-amber-text);
+  box-shadow: inset 0 0 0 1px #f3c47f;
+}
+
+.m2a-dossier__update {
+  margin-top: 0;
+  padding: 0 0.8em;
+  max-height: 0;
+  overflow: hidden;
+  border-left: 3px solid var(--m2a-amber);
+  background: var(--m2a-amber-soft);
+  border-radius: 0 6px 6px 0;
+  color: var(--m2a-slate);
+  opacity: 0;
+}
+
+/* One moment: the hold lapses and memory sends version 13 unasked. */
+.m2a-item--gone span {
+  text-decoration-line: line-through;
+  text-decoration-color: transparent;
+  animation: m2a-strike 0.5s ease-out 2.2s forwards;
+}
+
+.m2a-item--gone {
+  animation: m2a-leave 0.8s ease-in-out 2.9s forwards;
+}
+
+.m2a-item--arrives {
+  opacity: 0;
+  max-height: 0;
+  padding: 0 0 0 0.7em;
+  border-top-width: 0;
+  box-shadow: inset 3px 0 0 var(--m2a-amber);
+  animation: m2a-arrive 0.8s ease-out 3.5s forwards;
+}
+
+.m2a-v--old {
+  animation: m2a-fade-out 0.3s ease-out 3.5s forwards;
+}
+
+.m2a-v--new {
+  animation: m2a-fade-in 0.4s ease-out 3.7s forwards;
+}
+
+.m2a-dossier__update {
+  animation: m2a-caption 0.6s ease-out 3.7s forwards;
+}
+
+@keyframes m2a-strike {
+  to {
+    text-decoration-color: currentColor;
+    color: #5f7580;
+  }
+}
+
+@keyframes m2a-leave {
+  to {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-width: 0;
+  }
+}
+
+@keyframes m2a-arrive {
+  to {
+    opacity: 1;
+    max-height: 8em;
+    padding-top: 0.6em;
+    padding-bottom: 0.6em;
+    border-top-width: 1px;
+  }
+}
+
+@keyframes m2a-caption {
+  to {
+    opacity: 1;
+    max-height: 6em;
+    margin-top: 0.8rem;
+    padding: 0.55em 0.8em;
+  }
+}
+
+@keyframes m2a-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes m2a-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m2a-dossier *,
+  .m2a-dossier__update {
+    animation: none !important;
+  }
+
+  .m2a-item--gone {
+    display: none;
+  }
+
+  .m2a-item--arrives {
+    opacity: 1;
+    max-height: none;
+    padding: 0.6em 0 0.6em 0.7em;
+    border-top-width: 1px;
+  }
+
+  .m2a-v--old {
+    opacity: 0;
+  }
+
+  .m2a-v--new {
+    opacity: 1;
+  }
+
+  .m2a-dossier__update {
+    opacity: 1;
+    max-height: none;
+    margin-top: 0.8rem;
+    padding: 0.55em 0.8em;
+  }
+}
+
+/* --------------------------------------------------------- home sections */
+.md-typeset .m2a-section {
+  margin: 2.6rem 0;
+}
+
+.md-typeset .m2a-section > h2:first-child {
+  margin-top: 0;
+}
+
+.md-typeset ol.m2a-steps {
+  counter-reset: m2a-step;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.6rem;
+  margin: 1.4rem 0 1.2rem;
+  padding: 0;
+}
+
+.md-typeset ol.m2a-steps > li {
+  counter-increment: m2a-step;
+  margin: 0;
+  padding-top: 0.8rem;
+  border-top: 2px solid var(--md-primary-fg-color);
+}
+
+[data-md-color-scheme="slate"] .md-typeset ol.m2a-steps > li {
+  border-top-color: var(--md-accent-fg-color);
+}
+
+.md-typeset ol.m2a-steps > li::before {
+  content: counter(m2a-step);
+  display: block;
+  font-family: var(--md-code-font-family);
+  font-weight: 600;
+  font-size: 0.75rem;
+  color: var(--md-typeset-a-color);
+}
+
+.md-typeset .m2a-steps h3 {
+  margin: 0.2em 0 0.4em;
+  font-size: 0.95rem;
+}
+
+.md-typeset .m2a-steps p {
+  margin: 0 0 0.6em;
+}
+
+.md-typeset .m2a-steps .m2a-steps__wire {
+  color: var(--m2a-mist);
+  font-size: 0.7rem;
+}
+
+.md-typeset a.m2a-more {
+  font-weight: 500;
+  margin-right: 1.6em;
+}
+
+.md-typeset dl.m2a-guarantees {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem 2.6rem;
+  margin: 1.2rem 0 0;
+}
+
+.md-typeset dl.m2a-guarantees dt {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.md-typeset dl.m2a-guarantees dd {
+  margin: 0.35em 0 0;
+  color: #3d525c;
+}
+
+[data-md-color-scheme="slate"] .md-typeset dl.m2a-guarantees dd {
+  color: var(--md-default-fg-color--light);
+}
+
+.md-typeset dl.m2a-guarantees dd a {
+  margin-left: 0.3em;
+}
+
+.md-typeset ul.m2a-paths {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 2.6rem;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+
+.md-typeset ul.m2a-paths > li {
+  margin: 0;
+  padding: 1rem 0 0.4rem;
+  border-top: 1px solid var(--m2a-rule);
+}
+
+.md-typeset .m2a-paths h3 {
+  margin: 0 0 0.4em;
+  font-size: 0.9rem;
+}
+
+.md-typeset .m2a-paths p {
+  margin: 0 0 0.6em;
+}
+
+.md-typeset .m2a-paths p:last-child a {
+  font-weight: 500;
+  margin-right: 1.4em;
+}
+
+.md-typeset .m2a-section--status {
+  background: var(--m2a-ink-soft);
+  border-radius: 8px;
+  padding: 1.2rem 1.4rem;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .m2a-section--status {
+  background: rgba(99, 199, 214, 0.08);
+}
+
+.md-typeset .m2a-section--status h2 {
+  font-size: 1.1rem;
+}
+
+.md-typeset .m2a-section--status p:last-child {
+  margin-bottom: 0;
+}
+
+/* ------------------------------------------------------------ responsive */
+@media screen and (max-width: 76.1875em) {
+  .md-typeset ol.m2a-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media screen and (max-width: 60em) {
+  .m2a-hero__grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2.2rem;
+  }
+
+  .m2a-hero {
+    padding: 2.2rem 0 2.6rem;
+  }
+}
+
+@media screen and (max-width: 44.9375em) {
+  .m2a-hero__grid {
+    padding: 0 0.8rem;
+  }
+
+  .md-typeset ol.m2a-steps,
+  .md-typeset dl.m2a-guarantees,
+  .md-typeset ul.m2a-paths {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

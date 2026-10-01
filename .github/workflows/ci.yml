@@ -20,6 +20,20 @@ jobs:
       - run: pip install -r conformance/requirements.txt
       - run: pytest conformance -q
 
+  docs:
+    name: Documentation site and links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-docs.txt
+      - name: Build the site, failing on any broken link or anchor
+        run: mkdocs build --strict
+      - name: Check every relative link on GitHub
+        run: python scripts/check_links.py
+
   python:
     name: Reference implementation (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -35,8 +49,8 @@ jobs:
       - run: pip install -e "python[dev]"
       - name: Lint and type-check
         run: |
-          ruff check python examples
-          ruff format --check python examples
+          ruff check python examples scripts
+          ruff format --check python examples scripts
           mypy --strict python/src
       - name: Tests, including mem2a-conform against the sandbox
         run: pytest python/tests -q

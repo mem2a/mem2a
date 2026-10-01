@@ -410,6 +410,7 @@ Each has an issue for discussion. Evidence from real deployments is the most use
 8. [Should monitoring agents be able to watch without an action in hand?](https://github.com/mem2a/mem2a/issues/8)
 9. [How should an action be recorded after its watch expired?](https://github.com/mem2a/mem2a/issues/9)
 10. [Should claims travel separately from facts in a dossier?](https://github.com/mem2a/mem2a/issues/10)
+11. [How should a gateway speak Mem2A on an agent's behalf?](https://github.com/mem2a/mem2a/issues/23)
 
 ## 15. References
 

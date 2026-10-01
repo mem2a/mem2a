@@ -4,7 +4,7 @@ Implementations of Mem2A 0.1 that we know of. Conformance is what `mem2a-conform
 
 | Implementation | Role | Language | Built on | Conformance | Maintained by |
 | --- | --- | --- | --- | --- | --- |
-| [mem2a reference](python) | Memory, agent client, conformance checker | Python | a2a-sdk 1.2 | `mem2a-conform`: all 15 checks pass, including writes, Listen and access | Mem2A maintainers |
+| [mem2a reference](python) | Memory, agent client, [tool gateway](examples/tool-gateway), conformance checker | Python | a2a-sdk 1.2 | `mem2a-conform`: all 15 checks pass, including writes, Listen and access | Mem2A maintainers |
 
 ## Add yours
 

@@ -31,14 +31,22 @@ Thanks for helping. Mem2A is an early draft, which is the cheapest time to chang
 3. Make your change, then run what CI runs:
 
    ```sh
-   ruff check python examples && ruff format --check python examples
+   ruff check python examples scripts && ruff format --check python examples scripts
    mypy --strict python/src
    pytest python/tests conformance
    for demo in examples/*/demo.py; do python "$demo"; done
    python examples/sales-agent/agent.py --self-test
+   python scripts/check_links.py
    ```
 
-4. Commit with a sign-off (`git commit -s`, see below), push to your fork, and open a pull request that links the issue.
+   If you changed any documentation, also build the site, which fails on a broken link or anchor:
+
+   ```sh
+   pip install -r requirements-docs.txt
+   mkdocs build --strict      # or `mkdocs serve` to preview it at http://127.0.0.1:8000
+   ```
+
+4. Commit with a sign-off (`git commit -s`, see below), push to your fork, and open a pull request that links the issue. Write commit messages and pull request titles as [Conventional Commits](https://www.conventionalcommits.org/): `spec: require inReplyTo on replies`, `docs: explain push origins`, `feat(python): add a gateway helper`, `fix: ...`, `ci: ...`.
 
 ## Changing the spec
 

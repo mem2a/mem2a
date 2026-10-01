@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {% if page %}
+  {% set title = config.site_name if page.is_homepage or not page.title else page.title ~ " - " ~ config.site_name %}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:title" content="{{ title }}">
+  <meta property="og:description" content="{{ page.meta.description or config.site_description }}">
+  <meta property="og:image" content="{{ config.site_url }}assets/brand/mem2a-social.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta name="twitter:card" content="summary_large_image">
+  {% endif %}
+{% endblock %}
+
+{% block announce %}
+  Mem2A 0.1 is a draft for review: expect breaking changes before 1.0.
+  <a href="https://github.com/mem2a/mem2a/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+question%22">Weigh in on the open questions</a>
+{% endblock %}
