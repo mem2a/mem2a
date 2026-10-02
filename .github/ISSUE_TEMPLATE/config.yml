@@ -1,14 +1,14 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Ask a question or share an idea
-    url: https://github.com/mem2a/mem2a/discussions
-    about: For questions, ideas and show-and-tell. Issues are for bugs, spec changes and open questions.
+  - name: Read the documentation
+    url: https://mem2a.github.io/mem2a/
+    about: Guides, the specification, worked examples and the FAQ. Your answer may already be there.
   - name: Report a security problem
-    url: https://github.com/mem2a/mem2a/security/advisories/new
-    about: Please report security problems privately, not as issues.
+    url: https://github.com/mem2a/mem2a/security/policy
+    about: Please report security problems privately, not as issues. The security policy says how.
   - name: Talk to the team privately
     url: https://www.sentra.app/contact
     about: Design partnerships, deployments, or anything you'd rather not post in public. The maintainers are at Sentra.
   - name: Read the specification
-    url: https://github.com/mem2a/mem2a/blob/main/spec/v0.1/mem2a.md
+    url: https://mem2a.github.io/mem2a/specification/
     about: The rules, with links to every open question.

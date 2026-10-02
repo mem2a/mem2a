@@ -19,7 +19,7 @@ New to the code? Start with a [good first issue](https://github.com/mem2a/mem2a/
 
 ## Where to talk
 
-- **In public:** [GitHub Discussions](https://github.com/mem2a/mem2a/discussions) for questions and ideas, and [issues](https://github.com/mem2a/mem2a/issues) for bugs, spec changes and open questions.
+- **In public:** [GitHub issues](https://github.com/mem2a/mem2a/issues/new/choose), with a template for each kind of post: a [question](https://github.com/mem2a/mem2a/issues/new?template=question.yml), a use case, a bug or a spec change.
 - **In private:** [Sentra's contact page](https://www.sentra.app/contact), for design partnerships, deployments, or anything you'd rather not post. The [maintainers](../../MAINTAINERS.md) work at Sentra.
 - **Security problems:** never in public. Follow the [security policy](../../SECURITY.md).
 

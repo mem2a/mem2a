@@ -68,7 +68,7 @@ The reference implementation in [`python/`](python) should stay small and readab
 
 ## Where to talk
 
-Ask questions and share ideas in [GitHub Discussions](https://github.com/mem2a/mem2a/discussions). Use issues for bugs, spec changes and open questions. For anything you'd rather not post in public, use [Sentra's contact page](https://www.sentra.app/contact). Please keep discussion about security problems private ([SECURITY.md](SECURITY.md)).
+Ask questions, share ideas and report bugs in [GitHub issues](https://github.com/mem2a/mem2a/issues/new/choose). There's a template for each kind of post, including a plain [question](https://github.com/mem2a/mem2a/issues/new?template=question.yml). For anything you'd rather not post in public, use [Sentra's contact page](https://www.sentra.app/contact). Please keep discussion about security problems private ([SECURITY.md](SECURITY.md)).
 
 ## Sign-off
 

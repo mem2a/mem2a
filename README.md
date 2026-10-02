@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://mem2a.github.io/mem2a/">Documentation</a> |
   <a href="spec/v0.1/mem2a.md">Specification</a> |
-  <a href="https://github.com/mem2a/mem2a/discussions">Discussions</a> |
+  <a href="https://mem2a.github.io/mem2a/community/">Community</a> |
   <a href="docs/roadmap.md">Roadmap</a>
 </p>
 
@@ -100,7 +100,7 @@ sequenceDiagram
 
 Mem2A is a draft, and now is the cheapest time to change it.
 
-- **Questions and ideas:** start a [discussion](https://github.com/mem2a/mem2a/discussions), or weigh in on an [open question](https://github.com/mem2a/mem2a/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+question%22).
+- **Questions and ideas:** [ask us anything](https://github.com/mem2a/mem2a/issues/new?template=question.yml), or weigh in on an [open question](https://github.com/mem2a/mem2a/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+question%22).
 - **Bugs and proposals:** open an [issue](https://github.com/mem2a/mem2a/issues).
 - **Use cases:** [tell us about an agent that did something it shouldn't have](https://github.com/mem2a/mem2a/issues/new?template=use-case.yml).
 - **Design partners:** running agents from more than one vendor? [Try Mem2A with us](https://github.com/mem2a/mem2a/issues/new?template=design-partner.yml).
